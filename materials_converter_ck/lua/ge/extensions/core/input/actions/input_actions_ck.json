@@ -1,0 +1,3 @@
+{
+    "toggleCKConverter"     :{"cat":"debug", "order": 128, "ctx": "tlua", "onDown"  :"extensions.editor_ckmaterials.toggle()", "actionMap": "Global", "title": "Toggle Modding Tools", "desc": "Runs Modding Tools made by Car_Killer" }
+}
