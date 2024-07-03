@@ -44,6 +44,7 @@ import re
 import mathutils
 import math
 import zipfile
+import subprocess
 from bpy.utils import resource_path
 from pathlib import Path
 
@@ -61,9 +62,9 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
 
       bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
 
+    tempPath = bpy.app.tempdir
     BeamNGLevelImporter = bpy.context.scene.BeamNGLevelImporter
     if BeamNGLevelImporter.enable_zip == True:
-      tempPath = bpy.app.tempdir
       if tempPath and BeamNGLevelImporter.zippath:
         with zipfile.ZipFile(BeamNGLevelImporter.zippath, 'r') as zip_level:
           for filename in zip_level.namelist():
@@ -530,8 +531,19 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
                          find_chains = True,
                          fix_orientation = True)
         except:
-          print("Import failed skipping")
-          pass
+          try:
+            print("Blender cannot load this mesh, trying with assimp2obj")
+            newName = pthObj.replace(".dae", "")
+            command = (os.path.dirname(os.path.splitext(__file__)[0]) + '\\assimp export "' + pathmodel + '" "' + tempPath + newName + '.obj"' )
+            command = command.replace('/', '\\')
+            command = command.replace('\\\\', '\\')
+            if not os.path.exists(tempPath + newName):
+              os.makedirs(tempPath + newName)
+            subprocess.call(command)
+            bpy.ops.import_scene.obj(filepath = tempPath + newName + '.obj' )
+          except:
+            print("Import failed skipping")
+            pass
         junk = []
         poli = []
         lodSizes = []

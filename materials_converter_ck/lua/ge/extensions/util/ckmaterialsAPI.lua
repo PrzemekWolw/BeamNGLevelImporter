@@ -182,6 +182,7 @@ local function shapeExporterwork(job, convertdata, extension)
         shapeLoader = ShapePreview()
       end
       shapeLoader:setObjectModel(v)
+      if not FS:directoryExists("temp/exported/"..dir) then FS:directoryCreate("temp/exported/"..dir) end
       if extension == 1 then
         -- this shit have to be fixed, no idea for now, need to create fake scene object and export using other API? TBC
         shapeLoader:exportToCollada("temp/exported/"..dir..basefilename..".dae")
@@ -291,6 +292,30 @@ local function blenderExporterwork(job, convertdata)
     isDone = 1
   end
   extensions.editor_ckmaterials.jobData(4, isDone)
+end
+
+local function shapeDecompiler(meshesTable)
+  if not meshesTable then
+    log('E', '', 'There is no material path' )
+  else
+    log('I', '', 'Exporting meshes' )
+
+    --V2, shortcode much more efficient, checks all types of files at once
+    for k,v in ipairs(meshesTable) do
+      local dir, basefilename, ext = path.splitWithoutExt(v)
+      local shapeLoader
+      if not shapeLoader then
+        shapeLoader = ShapePreview()
+      end
+      shapeLoader:setObjectModel(v)
+      if not FS:directoryExists("temp/exported/"..dir) then FS:directoryCreate("temp/exported/"..dir) end
+      shapeLoader:exportToCollada("temp/exported/"..dir..basefilename..".dae")
+      log('I', 'Converted TSStatic to DAE: ' .. tostring(v))
+      shapeLoader:clearShape()
+    end
+  end
+  log('I', '', 'Goodbye!')
+  shutdown(0)
 end
 
 local function blenderExporter(convertdata)
@@ -429,6 +454,7 @@ M.getPlayerVehicle = getPlayerVehicle
 M.shapeExporter = shapeExporter
 M.textureExporter = textureExporter
 M.blenderExporter = blenderExporter
+M.shapeDecompiler = shapeDecompiler
 M.matReload = matReload
 M.resetCache = resetCache
 M.getProgress = getProgress
