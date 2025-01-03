@@ -26,6 +26,7 @@
 # - materials v0 support (done)
 # - terrain material support (done)
 # - default tod support using nishita (done)
+# - assimp (done)
 # - mesh road support
 # - decal road support
 # - groundcover support
@@ -35,11 +36,11 @@
 # - particle support
 # - ts support
 # - export support
-# - assimp
 
 import json
 import bpy
 import os
+import sys
 import re
 import mathutils
 import math
@@ -86,9 +87,9 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
     if bpy.app.version >= (4, 0):
       imageSpace = 'Non-Color'
 
-    importpath = BeamNGLevelImporter.levelpath + "\\main"
-    forestpath = BeamNGLevelImporter.levelpath + "\\forest"
-    managedItemData = BeamNGLevelImporter.levelpath + "\\art\\forest\\"
+    importpath = os.path.normpath(os.path.join(BeamNGLevelImporter.levelpath,'main'))
+    forestpath = os.path.normpath(os.path.join(BeamNGLevelImporter.levelpath,'forest'))
+    managedItemData = os.path.normpath(os.path.join(BeamNGLevelImporter.levelpath,'art','forest'))
 
     terrainExport = BeamNGLevelImporter.terpath
     level_data = []
@@ -220,10 +221,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             colTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = color.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -238,10 +241,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             norTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = normal.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -256,10 +261,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             metalTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = metallic.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -274,10 +281,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             roughTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = roughness.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -292,10 +301,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             opTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = opacity.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -310,10 +321,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             ccTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = clearcoat.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -328,10 +341,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             emTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = emissive.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -376,10 +391,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             colTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = color.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -394,10 +411,12 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             norTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = normal.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             if not terrainExport == "":
               pth = Path(terrainExport)
               pathTex = str(pth.parent) + pthObj
+              if sys.platform == "win32":
               pathTex = pathTex.replace("/","\\")
               if pathTex.endswith('.dds') or pathTex.endswith('.DDS'):
                 pathTex = pathTex.replace(".dds", ".png")
@@ -479,6 +498,7 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             colTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = basecolor.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             try:
               colTex.image = bpy.data.images.load(pathTex)
@@ -490,6 +510,7 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             norTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = basenormal.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             try:
               norTex.image = bpy.data.images.load(pathTex)
@@ -501,6 +522,7 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             norTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = baseheight.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             try:
               norTex.image = bpy.data.images.load(pathTex)
@@ -512,6 +534,7 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
             metalTex = new_mat.node_tree.nodes.new('ShaderNodeTexImage')
             pthObj = baseroughness.replace("levels", "/")
             pathTex = str(pth.parent) + pthObj
+            if sys.platform == "win32":
             pathTex = pathTex.replace("/","\\")
             try:
               metalTex.image = bpy.data.images.load(pathTex)
@@ -531,14 +554,24 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
                          find_chains = True,
                          fix_orientation = True)
         except:
+          print("collada import failed")
           try:
             print("Blender cannot load this mesh, trying with assimp2obj")
             newName = pthObj.replace(".dae", "")
+            if sys.platform == "win32":
             command = (os.path.dirname(os.path.splitext(__file__)[0]) + '\\assimp export "' + pathmodel + '" "' + tempPath + newName + '.obj"' )
+            if sys.platform == "linux" or sys.platform == "linux2":
+              command = ('assimp export "' + pathmodel + '" "' + tempPath + newName + '.obj"')
+              command = command.replace('//', '/')
+              command = command.replace('//', '/')
+            if sys.platform == "win32":
             command = command.replace('/', '\\')
             command = command.replace('\\\\', '\\')
             if not os.path.exists(tempPath + newName):
               os.makedirs(tempPath + newName)
+            if sys.platform == "linux" or sys.platform == "linux2":
+              subprocess.call(command, shell=True)
+            if sys.platform == "win32":
             subprocess.call(command)
             bpy.ops.import_scene.obj(filepath = tempPath + newName + '.obj' )
           except:
@@ -816,7 +849,7 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
           bpy.data.collections[i.get('__parent')].objects.link( o )
           try:
             ob = bpy.data.objects[model[1]].data
-            cp = bpy.data.objects.new(ob.name + "_" + persistentId, ob)
+            cp = bpy.data.objects.new(ob.name, ob)
             bpy.data.collections[i.get('__parent')].objects.link( cp )
             cp.parent = o
           except:
