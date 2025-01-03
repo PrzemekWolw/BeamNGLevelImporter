@@ -182,14 +182,21 @@ local function shapeExporterwork(job, convertdata, extension)
         shapeLoader = ShapePreview()
       end
       shapeLoader:setObjectModel(v)
-      if not FS:directoryExists("temp/exported/"..dir) then FS:directoryCreate("temp/exported/"..dir) end
+      local patchSplit = {}
+      for part in string.gmatch("/temp/exported"..dir, "([^/]+)") do
+        table.insert(patchSplit, part)
+      end
+      local current_path = ""
+      for i, part in ipairs(patchSplit) do
+          current_path = current_path .. "/" .. part
+          if not FS:directoryExists(current_path) then FS:directoryCreate(current_path) end
+      end
       if extension == 1 then
-        -- this shit have to be fixed, no idea for now, need to create fake scene object and export using other API? TBC
-        shapeLoader:exportToCollada("temp/exported/"..dir..basefilename..".dae")
+        shapeLoader:exportToCollada("/temp/exported"..dir..basefilename..".dae")
         log('I', 'Converted TSStatic to DAE: ' .. tostring(v))
       end
       if extension == 2 then
-        shapeLoader:exportToWavefront("temp/exported/"..dir..basefilename..".obj")
+        shapeLoader:exportToWavefront("/temp/exported"..dir..basefilename..".obj")
         log('I', 'Converted TSStatic to OBJ: ' .. tostring(v))
       end
       shapeLoader:clearShape()
