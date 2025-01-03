@@ -21,9 +21,6 @@ local ffi = require("ffi")
 --independent GUI
 local showUI = nil
 local tempFloat = nil
-local pos = im.ImVec2(0, 0)
-local sizeMin = im.ImVec2(0, 0)
-local sizeMax = im.ImVec2(-1, -1)
 
 local matdata = im.ArrayChar(256)
 local convertdata
@@ -38,7 +35,7 @@ local isVulkan = 0
 local isLinux = 0
 
 --da app info
-local tool_version = "2.0"
+local tool_version = "2.0.1"
 local appTitle = " Car_Killer Modding Tools - ".. tool_version .." - ".. beamng_buildtype .." - ".. beamng_arch
 
 local toolWindowName = 'addon_ckmaterials'
@@ -82,28 +79,6 @@ local function getOS()
 
   else
     log('I', '', 'Windows Detected' )
-  end
-end
-
-local imguipos
-local imguisize
-local screenSize
-local offset = {}
-
-local function onPreRender()
-  local ScreenBlurFX = scenetree.ScreenBlurFX
-  if ScreenBlurFX and imguipos and imguisize and ui_visibility.get() ~= false and showUI[0] == true then
-    local options = core_settings_graphic.getOptions()
-    local displayMode = options.GraphicDisplayModes.displayMode
-    local offsetW = {x = 0, y = 0}
-    if displayMode == "Window" then
-      offsetW = {x = 7, y = 31}
-    end
-    local xTCorner = (imguipos.x - offset[7]-offsetW.x) / screenSize.x
-    local yTCorner = (imguipos.y - offset[8]-offsetW.y) / screenSize.y
-    local xBCorner = imguisize.x / screenSize.x
-    local yBCorner = imguisize.y / screenSize.y
-    ScreenBlurFX.obj:addFrameBlurRect(xTCorner, yTCorner, xBCorner, yBCorner, ColorF(1, 1, 1, 1))
   end
 end
 
@@ -305,24 +280,7 @@ local function exportTab()
 end
 
 local function renderImgui()
-  if not editor or not editor.active then
-    im.PushStyleVar1(im.StyleVar_WindowRounding, 0.0)
-    im.PushStyleVar1(im.StyleVar_WindowBorderSize, 0.0)
-    im.PushStyleColor2(im.Col_TitleBgActive, im.ImVec4(0.15, 0.15, 0.15, 0.75))
-    im.PushStyleColor2(im.Col_TitleBg, im.ImVec4(0.15, 0.15, 0.15, 0.75))
-    im.PushStyleColor2(im.Col_WindowBg, im.ImVec4(0.15, 0.15, 0.15, 0.75))
-    im.PushStyleColor2(im.Col_TitleBgCollapsed, im.ImVec4(0.15, 0.15, 0.15, 0.45))
-    im.PushStyleColor2(im.Col_FrameBg, im.ImVec4(0.1, 0.1, 0.1, 0.45))
-    im.PushStyleColor2(im.Col_PopupBg, im.ImVec4(0.1, 0.1, 0.1, 0.95))
-    im.PushStyleColor2(im.Col_PlotHistogram, im.ImVec4(0.9, 0.4, 0.1, 1))
-    im.PushStyleColor2(im.Col_PlotHistogramHovered, im.ImVec4(1, 0.5, 0.1, 1))
-  end
-
   im.Begin(appTitle, showUI, im.WindowFlags_AlwaysAutoResize)
-  imguipos = im.GetWindowPos()
-  screenSize = im.GetMainViewport().Size
-  imguisize = im.GetWindowSize()
-  local hang = {}
 
   im.Text("This tool is here to help you converting materials from cs to json")
 
@@ -397,11 +355,6 @@ local function renderImgui()
   im.Text("Always follow tutorial in util thread!")
 
   im.End()
-
-  if not editor or not editor.active then
-    im.PopStyleVar(2)
-    im.PopStyleColor(8)
-  end
 end
 
 local function jobData(type, data)
@@ -417,10 +370,6 @@ local function onUpdate()
   if not showUI[0] then
     return
   end
-  local canvas = scenetree.findObject("Canvas")
-  canvas = tostring(canvas:getPlacement())
-  offset = {}
-  for x in canvas:gmatch("%-?%d+") do table.insert(offset, x) end
   renderImgui()
 end
 
@@ -473,7 +422,6 @@ M.show = openUI
 M.hide = hideUI
 M.toggle = toggleUI
 M.onExtensionLoaded = onExtensionLoaded
-M.onPreRender = onPreRender
 M.jobData = jobData
 M.onUpdate = onUpdate
 --M.onEditorGui = onEditorGui
