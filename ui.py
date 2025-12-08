@@ -6,8 +6,7 @@
 # ##### END LICENSE BLOCK #####
 
 import bpy
-from bpy.types import (Panel, Operator)
-import sys
+from bpy.types import Panel
 
 from . import importer
 
@@ -31,8 +30,6 @@ class BeamNGLevelImporterUI(Panel):
       col.prop(BeamNGLevelImporter, "zippath")
     else:
       col.prop(BeamNGLevelImporter, "levelpath")
-    col.label(text="Exported terrain Path")
-    col.prop(BeamNGLevelImporter, "terpath")
 
     layout.separator()
 
@@ -43,4 +40,4 @@ class BeamNGLevelImporterUI(Panel):
     if BeamNGLevelImporter.levelpath == "" and BeamNGLevelImporter.zippath == "*.zip" :
       col.label(text="You did not select location of files")
     else:
-      col.operator(importer.BeamNGLevelImporterLoader.bl_idname, text="Import Level Objects")
+      col.operator(importer.BeamNGLevelImporterLoader.bl_idname, text="Import Level Objects", icon='IMPORT')
