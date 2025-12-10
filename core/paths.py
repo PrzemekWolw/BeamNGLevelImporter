@@ -70,7 +70,7 @@ def strip_levels_prefix(s: str) -> str:
 
 def resolve_beamng_path(rel: str, level_dir: Path | None, extra_roots: list[Path] | None = None) -> Path:
   if not rel:
-    return level_dir
+    return level_dir if level_dir else Path('.')
   s = rel.replace('\\', '/')
   s_stripped = s.lstrip('/')
   if Path(s).is_absolute() and not s.lower().startswith('/levels/'):
@@ -88,10 +88,11 @@ def resolve_beamng_path(rel: str, level_dir: Path | None, extra_roots: list[Path
         return get_real_case_path(cand)
     return (base_candidates[0] / suffix) if base_candidates else Path('/' + s_stripped)
   else:
-    cand = (base / s_stripped)
+    root = level_dir if level_dir else Path('.')
+    cand = (root / s_stripped)
     if exists_insensitive(cand):
       return get_real_case_path(cand)
-    alt = (level_dir.parent / s_stripped)
+    alt = (root.parent / s_stripped)
     if exists_insensitive(alt):
       return get_real_case_path(alt)
     return cand
