@@ -174,10 +174,17 @@ def import_level(scene, props, operator=None):
           else:
             build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
 
+        #unmapped_mats are used often for materials that are applied to procedural objects
         elif v.get('mapTo') and v.get('version') == 1.5:
-          build_pbr_v15_material(v['mapTo'], v, ctx.config.level_path)
+          if not v['mapTo'] == 'unmapped_mat':
+            build_pbr_v15_material(v['mapTo'], v, ctx.config.level_path)
+          else:
+            build_pbr_v15_material(v['name'], v, ctx.config.level_path)
         elif v.get('mapTo') and (v.get('version') == 0 or not v.get('version')):
-          build_pbr_v0_material(v['mapTo'], v, ctx.config.level_path)
+          if not v['mapTo'] == 'unmapped_mat':
+            build_pbr_v0_material(v['mapTo'], v, ctx.config.level_path)
+          else:
+            build_pbr_v0_material(v['name'], v, ctx.config.level_path)
         ctx.progress.update(step=1)
 
     import_collada_shapes(ctx)
