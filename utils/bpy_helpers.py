@@ -21,12 +21,11 @@ def link_object_to_collection(obj, coll_name_or_coll):
     coll = bpy.data.collections.get(coll_name_or_coll)
   else:
     coll = coll_name_or_coll
-  if coll:
-    if obj.name not in coll.objects:
-      coll.objects.link(obj)
-  else:
-    if obj.name not in bpy.context.scene.collection.objects:
-      bpy.context.scene.collection.objects.link(obj)
+  target = coll or bpy.context.scene.collection
+  try:
+    target.objects.link(obj)
+  except RuntimeError:
+    pass
 
 def delete_object_if_exists(name: str):
   obj = bpy.data.objects.get(name)
