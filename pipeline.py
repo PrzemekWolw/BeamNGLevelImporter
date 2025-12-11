@@ -15,7 +15,8 @@ from .core.paths import extract_zip_level_root
 from .core.sjson import read_json_records, decode_sjson_file
 from .materials.v15 import build_pbr_v15_material
 from .materials.v0 import build_pbr_v0_material
-from .materials.terrain import create_terrain_material
+from .materials.terrain_v15 import build_terrain_material_v15
+from .materials.terrain_v0 import build_terrain_material_v0
 from .shapes.collada import import_collada_shapes
 from .objects.mission import build_mission_objects
 from .objects.forest import build_forest_objects
@@ -104,7 +105,12 @@ def import_level(scene, props, operator=None):
     if name:
       forest_names[name] = os.path.split(shape)[1]
 
-  cfg = ImportConfig(level_path=level_path, enable_zip=bool(props.enable_zip), zip_path=Path(props.zippath) if props.zippath else None)
+  cfg = ImportConfig(
+    level_path=level_path,
+    enable_zip=bool(props.enable_zip),
+    zip_path=Path(props.zippath) if props.zippath else None
+  )
+
   ctx = ImportContext(
     config=cfg,
     progress=ProgressHelper(),
@@ -118,6 +124,36 @@ def import_level(scene, props, operator=None):
     terrain_mats=terrain_mats
   )
 
+  texture_sets = {}
+  for pack in ctx.materials_packs:
+    if isinstance(pack, dict):
+      for k, v in pack.items():
+        if isinstance(v, dict) and v.get('class') == 'TerrainMaterialTextureSet':
+          ts_name = v.get('name') or k
+          if ts_name:
+            texture_sets[ts_name] = v
+
+  terrain_texset_name = None
+  for rec in ctx.level_data:
+    if rec.get('class') == 'TerrainBlock':
+      ts = rec.get('materialTextureSet')
+      if ts and ts in texture_sets:
+        terrain_texset_name = ts
+        break
+
+  use_v15_terrain = bool(terrain_texset_name)
+
+  terrain_world_size = None
+  try:
+    tb = next(rec for rec in ctx.level_data if rec.get('class') == 'TerrainBlock')
+    sq = float(tb.get('squareSize') or 1.0)
+    ter_meta = next((m for m in ctx.terrain_meta if isinstance(m, dict) and 'size' in m), None)
+    ter_size = int(ter_meta.get('size')) if ter_meta else None
+    if ter_size and ter_size > 1:
+      terrain_world_size = (ter_size - 1) * sq
+  except Exception:
+    terrain_world_size = None
+
   materials_count = sum(len(p) for p in ctx.materials_packs if isinstance(p, dict))
   total_steps = max(1, len(shapes)) + max(1, len(level_data)) + max(1, len(forest_data)) + max(1, materials_count) + 10
 
@@ -128,8 +164,16 @@ def import_level(scene, props, operator=None):
       if not isinstance(pack, dict):
         continue
       for _, v in pack.items():
-        if isinstance(v, dict) and v.get('class') == "TerrainMaterial":
-          create_terrain_material(ctx.config.level_path, v, ctx.terrain_mats)
+        if not isinstance(v, dict):
+          continue
+
+        # Terrain materials
+        if v.get('class') == "TerrainMaterial":
+          if use_v15_terrain:
+            build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+          else:
+            build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+
         elif v.get('mapTo') and v.get('version') == 1.5:
           build_pbr_v15_material(v['mapTo'], v, ctx.config.level_path)
         elif v.get('mapTo') and (v.get('version') == 0 or not v.get('version')):

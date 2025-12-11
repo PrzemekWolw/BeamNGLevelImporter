@@ -10,12 +10,10 @@
 
 ######## todo ########
 # - basic 5.x support...
-# - rotation fix, validate, add support for older forest format
+# - add support for older forest format
 # - water pane support, implement water materials
 # - light support, sync light energy properly
-# - terrain support, implement custom importer
 # - zip support, rework how we handle zip
-# - terrain material support, port proper terrain material support for v1.5
 # - mesh road support
 # - decal road support
 # - groundcover support, use geometry nodes
@@ -27,6 +25,7 @@
 # - export support
 # - integrate DTS importer
 # - hide base position objects in different scene
+# - asset link support
 
 import bpy
 from .pipeline import import_level

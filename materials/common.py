@@ -165,3 +165,49 @@ def use_uv2(layer, keys):
       except:
         return bool(v)
   return False
+
+def math_bin(nt, op, a, b):
+  """Create a Math node with operation `op` and link inputs a, b. Returns output socket."""
+  m = nt.nodes.new('ShaderNodeMath'); m.operation = op
+  nt.links.new(a, m.inputs[0]); nt.links.new(b, m.inputs[1])
+  return m.outputs['Value']
+
+def saturate_socket(nt, sock):
+  """Clamp a float socket to [0,1]. Returns clamped output socket."""
+  c = nt.nodes.new('ShaderNodeClamp'); c.clamp_type = 'MINMAX'
+  c.inputs['Min'].default_value = 0.0
+  c.inputs['Max'].default_value = 1.0
+  nt.links.new(sock, c.inputs['Value'])
+  return c.outputs['Result']
+
+def mix_val_scalar(nt, a, b, t):
+  """Return a*(1-t) + b*t for scalar sockets."""
+  one = value_node(nt, 1.0)
+  omt = math_bin(nt, 'SUBTRACT', one.outputs[0], t)
+  at = math_bin(nt, 'MULTIPLY', a, omt)
+  bt = math_bin(nt, 'MULTIPLY', b, t)
+  return math_bin(nt, 'ADD', at, bt)
+
+def rgb_to_bw_socket(nt, col):
+  """Convert color socket to grayscale (R,G,B -> Y)."""
+  n = nt.nodes.new('ShaderNodeRGBToBW')
+  nt.links.new(col, n.inputs['Color'])
+  return n.outputs['Val']
+
+def sample_tiled_img(nt, relpath, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name='UVMap', label=''):
+  """
+  Create UVMap + Mapping with tiling = 1/size_meters (Y flipped if invert_y), then an Image node.
+  Returns (img_node, mapping_node). If relpath is falsy, returns (None, None).
+  """
+  if not relpath:
+    return None, None
+  uv = nt.nodes.new('ShaderNodeUVMap'); uv.uv_map = uv_name
+  mapn = nt.nodes.new('ShaderNodeMapping'); mapn.vector_type='POINT'
+  tiling = 1.0 / float(size_meters) if size_meters and float(size_meters) > 0 else 1.0
+  mapn.inputs['Scale'].default_value[0] = tiling
+  mapn.inputs['Scale'].default_value[1] = -tiling if invert_y else tiling
+  mapn.inputs['Scale'].default_value[2] = 1.0
+  nt.links.new(uv.outputs['UV'], mapn.inputs['Vector'])
+  img = img_node(nt, relpath, level_dir, colorspace=colorspace, label=label)
+  nt.links.new(mapn.outputs['Vector'], img.inputs['Vector'])
+  return img, mapn

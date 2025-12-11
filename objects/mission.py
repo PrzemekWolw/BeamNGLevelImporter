@@ -8,7 +8,9 @@
 import bpy
 import math
 import mathutils
+from collections import defaultdict
 from ..core.progress import force_redraw
+from ..objects.terrainblock import import_terrain_block
 from ..utils.bpy_helpers import ensure_collection, link_object_to_collection
 
 def get_euler_from_rotlist(rot):
@@ -115,15 +117,137 @@ def get_parent_collection(parent_name):
   _coll_cache[parent_name] = c
   return c
 
+def _normalize_scale(scale):
+  if isinstance(scale, (int, float)):
+    return (float(scale), float(scale), float(scale))
+  if isinstance(scale, (list, tuple)):
+    if len(scale) == 1:
+      return (float(scale[0]), float(scale[0]), float(scale[0]))
+    if len(scale) >= 3:
+      return (float(scale[0]), float(scale[1]), float(scale[2]))
+    s = list(scale) + [1.0] * (3 - len(scale))
+    return (float(s[0]), float(s[1]), float(s[2]))
+  return (1.0, 1.0, 1.0)
+
+def _build_tsstatic_instancers(ts_groups, progress=None):
+  # ts_groups: dict with key=(inst_name, parent_coll) and value=list of dicts with pos, rot_euler, scale
+  total_items = sum(len(v) for v in ts_groups.values())
+  processed = 0
+
+  rot_attr_name = 'ts_rot'
+  scl_attr_name = 'ts_scale'
+
+  for (inst_name, parent_coll), items in ts_groups.items():
+    try:
+      # Find source object to instance
+      lib_obj = bpy.data.objects.get(inst_name)
+      if not lib_obj or lib_obj.type != 'MESH':
+        # Fallback to empties per-item
+        for it in items:
+          empty = bpy.data.objects.new(inst_name, None)
+          empty.empty_display_type = 'ARROWS'
+          empty.matrix_world = make_matrix(it['pos'], it['rot_euler'], it['scale'])
+          fast_link(empty, parent_coll)
+          processed += 1
+          if progress and (processed % 64) == 0:
+            progress.update(step=1)
+        continue
+
+      # Create point cloud mesh for this group
+      mesh_name = f"TSPoints_{inst_name}"
+      mesh = bpy.data.meshes.new(mesh_name)
+
+      positions = [it['pos'] for it in items]
+      rotations_euler = [it['rot_euler'] for it in items]
+      scales = [it['scale'] for it in items]
+
+      mesh.from_pydata(positions, [], [])
+      mesh.update()
+
+      # Attributes on point domain with non-conflicting names
+      rotation_attr = mesh.attributes.new(name=rot_attr_name, type='FLOAT_VECTOR', domain='POINT')
+      scale_attr = mesh.attributes.new(name=scl_attr_name, type='FLOAT_VECTOR', domain='POINT')
+
+      for idx, (euler, sc) in enumerate(zip(rotations_euler, scales)):
+        rotation_attr.data[idx].vector = (float(euler.x), float(euler.y), float(euler.z))
+        scale_attr.data[idx].vector = (float(sc[0]), float(sc[1]), float(sc[2]))
+
+      # Create instancer object
+      inst_obj_name = f"TSStatic_{inst_name}"
+      inst_obj = bpy.data.objects.new(inst_obj_name, mesh)
+      fast_link(inst_obj, parent_coll)
+
+      # Geometry Nodes modifier
+      mod = inst_obj.modifiers.new(name="TSStaticInstances", type='NODES')
+      node_group_name = f"TSStaticInstancer_{inst_name}"
+      node_group = bpy.data.node_groups.new(name=node_group_name, type='GeometryNodeTree')
+
+      # IO
+      input_node = node_group.nodes.new('NodeGroupInput')
+      output_node = node_group.nodes.new('NodeGroupOutput')
+      node_group.interface.new_socket(name='Geometry', in_out='INPUT', socket_type='NodeSocketGeometry')
+      node_group.interface.new_socket(name='Geometry', in_out='OUTPUT', socket_type='NodeSocketGeometry')
+
+      # Object Info for the source geometry
+      object_info_node = node_group.nodes.new('GeometryNodeObjectInfo')
+      object_info_node.inputs['Object'].default_value = lib_obj
+      if hasattr(object_info_node, "transform_space"):
+        object_info_node.transform_space = 'ORIGINAL'
+
+      # Instance on Points
+      instance_node = node_group.nodes.new('GeometryNodeInstanceOnPoints')
+
+      # Named attributes
+      rot_attr_node = node_group.nodes.new('GeometryNodeInputNamedAttribute')
+      rot_attr_node.inputs['Name'].default_value = rot_attr_name
+      if hasattr(rot_attr_node, "data_type"):
+        rot_attr_node.data_type = 'FLOAT_VECTOR'
+
+      scl_attr_node = node_group.nodes.new('GeometryNodeInputNamedAttribute')
+      scl_attr_node.inputs['Name'].default_value = scl_attr_name
+      if hasattr(scl_attr_node, "data_type"):
+        scl_attr_node.data_type = 'FLOAT_VECTOR'
+
+      # Wire graph
+      node_group.links.new(input_node.outputs['Geometry'], instance_node.inputs['Points'])
+      node_group.links.new(object_info_node.outputs['Geometry'], instance_node.inputs['Instance'])
+      node_group.links.new(rot_attr_node.outputs['Attribute'], instance_node.inputs['Rotation'])
+      node_group.links.new(scl_attr_node.outputs['Attribute'], instance_node.inputs['Scale'])
+      node_group.links.new(instance_node.outputs['Instances'], output_node.inputs['Geometry'])
+
+      mod.node_group = node_group
+
+      processed += len(items)
+      if progress and (processed % 64) == 0:
+        progress.update(step=1)
+
+    except Exception as e:
+      print(f"Error building TSStatic instancer for {inst_name}: {e}")
+      import traceback
+      traceback.print_exc()
+      # Fallback to individual empties on error
+      for it in items:
+        empty = bpy.data.objects.new(inst_name, None)
+        empty.empty_display_type = 'ARROWS'
+        empty.matrix_world = make_matrix(it['pos'], it['rot_euler'], it['scale'])
+        fast_link(empty, parent_coll)
+        processed += 1
+        if progress and (processed % 64) == 0:
+          progress.update(step=1)
+
 def build_mission_objects(ctx):
   ctx.progress.update("Importing mission data...")
+
+  # Collect TSStatic items for batched instancing
+  ts_groups = defaultdict(list)
+
   for idx, i in enumerate(ctx.level_data):
     cls = i.get('class')
     parent_coll = get_parent_collection(i.get('__parent'))
     rot = i.get('rotationMatrix')
     rot_euler = get_euler_from_rotlist(rot)
     pos = i.get('position') or [0,0,0]
-    scl = i.get('scale') or [1,1,1]
+    scl = _normalize_scale(i.get('scale') or [1,1,1])
 
     if cls == 'ScatterSky':
       world = bpy.context.scene.world
@@ -176,83 +300,27 @@ def build_mission_objects(ctx):
       name = i.get('name') or 'WaterBlock'
       make_cube_fast(name, sc, pz, rot_euler, parent_coll)
 
-    #elif cls == 'TerrainBlock' and ctx.config.terrain_export and ctx.config.terrain_export.exists():
-    #  res = 0
-    #  tfile = i.get('terrainFile')
-    #  for k in ctx.terrain_meta:
-    #    if k.get('datafile') == tfile:
-    #      res = k.get('size') or 0
-    #      break
-    #  if not res:
-    #    continue
-    #  offset = res / 2.0
-    #  p2 = (pos[0] + offset, pos[1] + offset, pos[2])
-    #  sqr = float(i.get('squareSize') or 1.0)
-    #  final_xy = ((res/2.0)*sqr, (res/2.0)*sqr, 1.0)
-    #  o = make_plane_fast('TerrainBlock', 2.0, p2, rot_euler, parent_coll)
-    #  o.matrix_world = make_matrix(p2, rot_euler, final_xy)
-    #
-    #  sub = o.modifiers.new("SubsurfModifier", 'SUBSURF')
-    #  sub.levels = 11
-    #  sub.render_levels = 11
-    #  sub.subdivision_type = 'SIMPLE'
-    #  disp = o.modifiers.new("DisplaceModifier", 'DISPLACE')
-    #  disp.texture_coords = 'UV'
-    #  disp.mid_level = 0.0
-    #  disp.strength = float(i.get('maxHeight') or 2048)
-    #
-    #  tex_file = None
-    #  for f in ctx.config.terrain_export.iterdir():
-    #    low = f.name.lower()
-    #    if low in ('heightmap.png','heightmap.dds','heightmap.exr','heightmap.tif','heightmap.tiff'):
-    #      tex_file = f
-    #      break
-    #  if tex_file:
-    #    try:
-    #      tex = bpy.data.textures.new(o.name + '_heightmap', 'IMAGE')
-    #      tex.image = bpy.data.images.load(str(tex_file))
-    #      try: tex.image.colorspace_settings.name = 'Non-Color'
-    #      except Exception: pass
-    #      disp.texture = tex
-    #    except Exception:
-    #      mat_t = o.active_material or bpy.data.materials.new('Terrain_Mat')
-    #      o.active_material = mat_t
-    #      mat_t.use_nodes = True
-    #      ntm = mat_t.node_tree
-    #      outm = ntm.nodes.get('Material Output') or ntm.nodes.new('ShaderNodeOutputMaterial')
-    #      dispn = ntm.nodes.new('ShaderNodeDisplacement')
-    #      img = ntm.nodes.new('ShaderNodeTexImage')
-    #      img.image = bpy.data.images.load(str(tex_file))
-    #      try: img.image.colorspace_settings.name = 'Non-Color'
-    #      except Exception: pass
-    #      ntm.links.new(dispn.inputs['Height'], img.outputs['Color'])
-    #      ntm.links.new(outm.inputs['Displacement'], dispn.outputs['Displacement'])
-    #      dispn.inputs['Scale'].default_value = float(i.get('maxHeight') or 2048)
-    #
-    #  for m in ctx.terrain_mats:
-    #    mat_t = bpy.data.materials.get(m)
-    #    if mat_t:
-    #      o.data.materials.append(mat_t)
-    #      o.active_material_index = len(o.data.materials) - 1
-    #
-    #  if o.data:
-    #    for poly in o.data.polygons:
-    #      poly.use_smooth = True
-    #
+    elif cls == 'TerrainBlock':
+      parent_coll = get_parent_collection(i.get('__parent'))
+      terrain_obj = import_terrain_block(ctx, i)
+      if terrain_obj:
+        fast_link(terrain_obj, parent_coll)
+
     elif cls == 'TSStatic':
       shapeName = i.get('shapeName')
       inst_name = (shapeName and shapeName.split('/')[-1]) or 'TSStatic'
-      empty = bpy.data.objects.new(inst_name, None)
-      empty.empty_display_type = 'ARROWS'
-      empty.matrix_world = make_matrix(pos, rot_euler, tuple(scl))
-      fast_link(empty, parent_coll)
-      lib_obj = bpy.data.objects.get(inst_name)
-      if lib_obj and lib_obj.type == 'MESH':
-        cp = bpy.data.objects.new(inst_name, lib_obj.data)
-        fast_link(cp, parent_coll)
-        cp.parent = empty
+      # Collect for instancing
+      ts_groups[(inst_name, parent_coll)].append({
+        'pos': pos,
+        'rot_euler': rot_euler,
+        'scale': scl,
+      })
 
     if (idx & 31) == 0:
       ctx.progress.update(step=1)
       if (idx & 127) == 0:
         force_redraw()
+
+  # Build TSStatic instancers
+  if ts_groups:
+    _build_tsstatic_instancers(ts_groups, progress=ctx.progress)
