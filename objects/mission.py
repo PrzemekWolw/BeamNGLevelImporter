@@ -11,6 +11,7 @@ import mathutils
 from collections import defaultdict
 from ..core.progress import force_redraw
 from ..objects.terrainblock import import_terrain_block
+from ..objects.groundcover import build_groundcover_objects, bake_groundcover_to_mesh
 from ..utils.bpy_helpers import ensure_collection, link_object_to_collection
 
 def get_euler_from_rotlist(rot):
@@ -240,6 +241,7 @@ def build_mission_objects(ctx):
 
   # Collect TSStatic items for batched instancing
   ts_groups = defaultdict(list)
+  groundcovers_present = False
 
   for idx, i in enumerate(ctx.level_data):
     cls = i.get('class')
@@ -316,6 +318,9 @@ def build_mission_objects(ctx):
         'scale': scl,
       })
 
+    elif cls == 'GroundCover':
+      groundcovers_present = True
+
     if (idx & 31) == 0:
       ctx.progress.update(step=1)
       if (idx & 127) == 0:
@@ -324,3 +329,8 @@ def build_mission_objects(ctx):
   # Build TSStatic instancers
   if ts_groups:
     _build_tsstatic_instancers(ts_groups, progress=ctx.progress)
+
+  # Build GroundCover instancers
+  if groundcovers_present:
+    build_groundcover_objects(ctx)
+    bake_groundcover_to_mesh(remove_particles=True)

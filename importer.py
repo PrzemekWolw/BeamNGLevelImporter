@@ -16,7 +16,6 @@
 # - zip support, rework how we handle zip
 # - mesh road support
 # - decal road support
-# - groundcover support, use geometry nodes
 # - prefabs support
 # - rivers support
 # - decal support
