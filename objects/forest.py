@@ -4,11 +4,19 @@
 # see LICENSE for the full license text
 #
 # ##### END LICENSE BLOCK #####
+
+
 import bpy
 from collections import defaultdict
 from itertools import chain
 from ..utils.bpy_helpers import ensure_collection, link_object_to_collection
 from .mission import get_euler_from_rotlist
+try:
+  import numpy as np
+  _HAS_NUMPY = True
+except Exception:
+  np = None
+  _HAS_NUMPY = False
 
 def _flatten_vec3_list(vecs):
   # vecs: iterable of (x,y,z) tuples
@@ -65,18 +73,47 @@ def get_or_create_forest_marker():
 def _build_point_geometry(name, positions, rotations, scales):
   rot_attr_name = 'forest_rot'
   scl_attr_name = 'forest_scale'
+
+  if _HAS_NUMPY:
+    # Accept either lists or already-prepared NumPy arrays
+    pos = positions if isinstance(positions, np.ndarray) else np.asarray(positions, dtype=np.float32)
+    rot = rotations if isinstance(rotations, np.ndarray) else np.asarray(rotations, dtype=np.float32)
+    scl = scales if isinstance(scales, np.ndarray) else np.asarray(scales, dtype=np.float32)
+
+    # Ensure contiguous float32 buffers
+    pos = np.ascontiguousarray(pos, dtype=np.float32)
+    rot = np.ascontiguousarray(rot, dtype=np.float32)
+    scl = np.ascontiguousarray(scl, dtype=np.float32)
+
+    n = int(pos.shape[0])
+    mesh = bpy.data.meshes.new(name)
+    mesh.vertices.add(n)
+    mesh.vertices.foreach_set("co", pos.reshape(-1))
+
+    rot_attr = mesh.attributes.new(name=rot_attr_name, type='FLOAT_VECTOR', domain='POINT')
+    scl_attr = mesh.attributes.new(name=scl_attr_name, type='FLOAT_VECTOR', domain='POINT')
+    rot_attr.data.foreach_set("vector", rot.reshape(-1))
+    scl_attr.data.foreach_set("vector", scl.reshape(-1))
+
+    mesh.update()
+    return mesh, rot_attr_name, scl_attr_name, False
+
+  # Fallback path without NumPy
   n = len(positions)
-  pos_flat = list(v for xyz in positions for v in xyz)
-  rot_flat = list(v for xyz in rotations for v in xyz)
-  scl_flat = list(v for xyz in scales for v in xyz)
+  pos_flat = [v for xyz in positions for v in xyz]
+  rot_flat = [v for xyz in rotations for v in xyz]
+  scl_flat = [v for xyz in scales for v in xyz]
+
   mesh = bpy.data.meshes.new(name)
   mesh.vertices.add(n)
   mesh.vertices.foreach_set("co", pos_flat)
-  mesh.update()
+
   rot_attr = mesh.attributes.new(name=rot_attr_name, type='FLOAT_VECTOR', domain='POINT')
   scl_attr = mesh.attributes.new(name=scl_attr_name, type='FLOAT_VECTOR', domain='POINT')
   rot_attr.data.foreach_set("vector", rot_flat)
   scl_attr.data.foreach_set("vector", scl_flat)
+
+  mesh.update()
   return mesh, rot_attr_name, scl_attr_name, False
 
 def build_forest_objects(ctx):
@@ -110,20 +147,36 @@ def build_forest_objects(ctx):
       if not source_obj:
         source_obj = get_or_create_forest_marker()
 
+      n = len(items)
 
-      positions = []
-      rotations_euler = []
-      scales = []
+      if _HAS_NUMPY:
+        # Preallocate arrays for fast writes and foreach_set
+        positions = np.empty((n, 3), dtype=np.float32)
+        rotations_euler = np.empty((n, 3), dtype=np.float32)
+        scales = np.empty((n, 3), dtype=np.float32)
 
-      for i in items:
-        pos = i.get('pos') or (0.0, 0.0, 0.0)
-        rot = i.get('rotationMatrix')
-        euler = get_euler_from_rotlist(rot)
-        sca = _normalize_scale(i.get('scale'))
+        for idx, i in enumerate(items):
+          pos = i.get('pos') or (0.0, 0.0, 0.0)
+          euler = get_euler_from_rotlist(i.get('rotationMatrix'))
+          sca = _normalize_scale(i.get('scale'))
 
-        positions.append((float(pos[0]), float(pos[1]), float(pos[2])))
-        rotations_euler.append((float(euler.x), float(euler.y), float(euler.z)))
-        scales.append((float(sca[0]), float(sca[1]), float(sca[2])))
+          positions[idx, :] = (float(pos[0]), float(pos[1]), float(pos[2]))
+          rotations_euler[idx, :] = (float(euler.x), float(euler.y), float(euler.z))
+          scales[idx, :] = (float(sca[0]), float(sca[1]), float(sca[2]))
+      else:
+        positions = []
+        rotations_euler = []
+        scales = []
+
+        for i in items:
+          pos = i.get('pos') or (0.0, 0.0, 0.0)
+          rot = i.get('rotationMatrix')
+          euler = get_euler_from_rotlist(rot)
+          sca = _normalize_scale(i.get('scale'))
+
+          positions.append((float(pos[0]), float(pos[1]), float(pos[2])))
+          rotations_euler.append((float(euler.x), float(euler.y), float(euler.z)))
+          scales.append((float(sca[0]), float(sca[1]), float(sca[2])))
 
       # Create point geometry with attributes in bulk
       geo_name = f"ForestPoints_{type_name}"

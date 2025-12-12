@@ -6,6 +6,11 @@
 # ##### END LICENSE BLOCK #####
 import bpy
 from mathutils import Vector
+try:
+  import numpy as np
+  _HAVE_NP = True
+except Exception:
+  _HAVE_NP = False
 from ..utils.bpy_helpers import ensure_collection
 
 # Internal state
@@ -591,100 +596,269 @@ def bake_groundcover_to_mesh(ctx=None, remove_particles=True, remove_gc_vgroups=
   base_quad_uv = [(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)]
   base_tri_uv  = [(0.0,0.0),(1.0,0.0),(0.5,1.0)]
 
-  # Build one mesh per GC (optimized)
+  # Build one mesh per GC (numpy accelerated when available)
   for gcname, ps_names in groups.items():
-    verts = []
-    faces_only = []
-    face_mats = []
-    uv_coords = []
+    if _HAVE_NP:
+      # NumPy accelerated path
+      materials = []
+      mat_index_lut = {}
 
-    materials = []
-    mat_index_lut = {}  # material -> index
+      per_ps_data = []
+      total_V = total_L = total_P = 0
 
-    for psname in ps_names:
-      d = ps_info[psname]
-      inst_obj = d["inst_obj"]
-      src_me = inst_obj.data
+      for psname in ps_names:
+        d = ps_info[psname]
+        inst_obj = d["inst_obj"]
+        src_me = inst_obj.data
 
-      # Local geometry; cache topology once per source mesh
-      local_verts = [v.co.copy() for v in src_me.vertices]
-      local_faces = [list(p.vertices) for p in src_me.polygons]
-      if not local_faces:
-        # fallback quad
-        local_verts = [Vector((0.0,-0.5,0.0)), Vector((0.0,0.5,0.0)), Vector((0.0,0.5,1.0)), Vector((0.0,-0.5,1.0))]
-        local_faces = [[0,1,2,3]]
-      face_lengths = [len(f) for f in local_faces]
-      # material for this ps
-      mat = inst_obj.data.materials[0] if inst_obj.data.materials else None
-      if mat not in mat_index_lut:
-        mat_index_lut[mat] = len(materials)
-        materials.append(mat)
-      mindex = mat_index_lut[mat]
+        # local topology
+        local_faces = [list(p.vertices) for p in src_me.polygons]
+        if not local_faces:
+          local_verts = np.array([[0.0,-0.5,0.0],
+                                  [0.0, 0.5,0.0],
+                                  [0.0, 0.5,1.0],
+                                  [0.0,-0.5,1.0]], dtype=np.float32)
+          local_faces = [[0,1,2,3]]
+        else:
+          local_verts = np.array([v.co[:] for v in src_me.vertices], dtype=np.float32)
 
-      # For each instance transform, transform the whole vertex set once
-      for M in transforms.get(psname, []):
-        base_index = len(verts)
-        # transform all vertices once per instance
-        tverts = [M @ v for v in local_verts]
-        verts.extend(tverts)
-        # add faces referencing the transformed vertices
-        for f in local_faces:
-          faces_only.append([base_index + i for i in f])
-          face_mats.append(mindex)
-        # UVs per polygon, use simple patterns (consistent with previous behavior)
-        for flen in face_lengths:
-          if flen == 4:
-            uv_coords.extend(base_quad_uv)
-          elif flen == 3:
-            uv_coords.extend(base_tri_uv)
+        flens = np.array([len(f) for f in local_faces], dtype=np.int32)
+        face_loops = int(flens.sum())
+        face_count = len(local_faces)
+        loops_idx = np.fromiter((vi for f in local_faces for vi in f), dtype=np.int32, count=face_loops)
+
+        # material index for this ps
+        mat = inst_obj.data.materials[0] if inst_obj.data.materials else None
+        if mat not in mat_index_lut:
+          mat_index_lut[mat] = len(materials)
+          materials.append(mat)
+        mat_idx = mat_index_lut[mat]
+
+        # instance count for this ps
+        M_list = transforms.get(psname, [])
+        k = len(M_list)
+        if k == 0:
+          continue
+
+        per_ps_data.append(dict(
+          local_verts=local_verts,
+          loops_idx=loops_idx,
+          flens=flens,
+          face_count=face_count,
+          face_loops=face_loops,
+          mat_idx=mat_idx,
+          mats=[np.array(M, dtype=np.float32) for M in M_list],
+        ))
+
+        total_V += k * local_verts.shape[0]
+        total_L += k * face_loops
+        total_P += k * face_count
+
+      if total_V == 0 or total_P == 0:
+        continue
+
+      # Preallocate big arrays
+      coords = np.empty((total_V, 3), dtype=np.float32)
+      loop_vertex_index = np.empty((total_L,), dtype=np.int32)
+      poly_loop_start = np.empty((total_P,), dtype=np.int32)
+      poly_loop_total = np.empty((total_P,), dtype=np.int32)
+      poly_mat_index = np.empty((total_P,), dtype=np.int32)
+      uv = np.empty((total_L, 2), dtype=np.float32)
+
+      base_quad_uv_np = np.array([(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)], dtype=np.float32)
+      base_tri_uv_np  = np.array([(0.0,0.0),(1.0,0.0),(0.5,1.0)], dtype=np.float32)
+
+      v0 = l0 = p0 = 0
+      for d in per_ps_data:
+        V = d["local_verts"]
+        Vn = V.shape[0]
+        Lidx = d["loops_idx"]
+        Flens = d["flens"]
+        F = d["face_count"]
+        L = d["face_loops"]
+        mat_idx = d["mat_idx"]
+        M_list = d["mats"]
+        K = len(M_list)
+
+        # Transform verts for all instances in one go
+        Vh = np.concatenate([V, np.ones((Vn,1), dtype=np.float32)], axis=1)  # (V,4)
+        M_np = np.stack(M_list, axis=0)  # (K,4,4)
+        tV = (Vh[None, :, :] @ np.transpose(M_np, (0,2,1)))  # (K,V,4)
+        tV = tV[..., :3].reshape(K*Vn, 3)
+        coords[v0:v0 + K*Vn, :] = tV
+
+        # Loops vertex indices: tile per-instance with vertex base offsets
+        l_block = (Lidx[None, :] + (np.arange(K, dtype=np.int32)[:, None] * Vn)).reshape(-1)
+        loop_vertex_index[l0:l0 + K*L] = l_block
+
+        # loop_total repeats for each instance
+        Flens_tile = np.tile(Flens, K)
+        poly_loop_total[p0:p0 + K*F] = Flens_tile
+
+        # loop_start per instance
+        per_face_offsets = np.zeros(F, dtype=np.int32)
+        if F > 1:
+          per_face_offsets[1:] = np.cumsum(Flens[:-1])
+        inst_base = (np.arange(K, dtype=np.int32) * L)[:, None]
+        loop_start_block = (inst_base + per_face_offsets[None, :]).reshape(-1)
+        poly_loop_start[p0:p0 + K*F] = l0 + loop_start_block
+
+        # Material indices per polygon
+        poly_mat_index[p0:p0 + K*F] = mat_idx
+
+        # UVs per loop: build one instance worth, then tile K times
+        uv_one = np.empty((L, 2), dtype=np.float32)
+        pos = 0
+        for fl in Flens:
+          if fl == 4:
+            uv_one[pos:pos+4, :] = base_quad_uv_np
+            pos += 4
+          elif fl == 3:
+            uv_one[pos:pos+3, :] = base_tri_uv_np
+            pos += 3
           else:
-            # simple gradient around polygon
-            for i in range(flen):
-              t = i / max(1, flen-1)
-              uv_coords.append((t, t))
+            t = np.linspace(0.0, 1.0, num=int(fl), dtype=np.float32)
+            uv_one[pos:pos+fl, 0] = t
+            uv_one[pos:pos+fl, 1] = t
+            pos += fl
+        uv[l0:l0 + K*L, :] = np.tile(uv_one, (K, 1))
 
-    # Build mesh/object for this GC using fast foreach_set where possible
-    me_name = f"BAKE_GC_{gcname}"
-    me_old = bpy.data.meshes.get(me_name)
-    if me_old:
-      try: bpy.data.meshes.remove(me_old)
-      except Exception: pass
-    me = bpy.data.meshes.new(me_name)
-    me.from_pydata(verts, [], faces_only)
-    me.update()
+        v0 += K*Vn
+        l0 += K*L
+        p0 += K*F
 
-    # Assign materials
-    for mat in materials:
-      me.materials.append(mat if mat else None)
-
-    # Assign material indices per polygon fast
-    try:
-      me.polygons.foreach_set("material_index", face_mats)
-    except Exception:
-      for i, p in enumerate(me.polygons):
-        try: p.material_index = face_mats[i]
+      # Build mesh using foreach_set
+      me_name = f"BAKE_GC_{gcname}"
+      me_old = bpy.data.meshes.get(me_name)
+      if me_old:
+        try: bpy.data.meshes.remove(me_old)
         except Exception: pass
+      me = bpy.data.meshes.new(me_name)
+      me.vertices.add(total_V)
+      me.loops.add(total_L)
+      me.polygons.add(total_P)
 
-    # UVs using foreach_set for speed
-    try:
-      uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
-      # flatten UVs
-      flat_uv = [c for uv in uv_coords for c in (uv[0], uv[1])]
-      # Ensure size matches; if not, clamp
-      total_loops = len(me.loops)
-      if len(flat_uv) < total_loops * 2:
-        flat_uv.extend([0.0, 0.0] * (total_loops - len(flat_uv)//2))
-      elif len(flat_uv) > total_loops * 2:
-        flat_uv = flat_uv[:total_loops*2]
-      uv_layer.data.foreach_set("uv", flat_uv)
-    except Exception:
-      pass
+      me.vertices.foreach_set("co", coords.ravel())
+      me.loops.foreach_set("vertex_index", loop_vertex_index)
+      me.polygons.foreach_set("loop_start", poly_loop_start)
+      me.polygons.foreach_set("loop_total", poly_loop_total)
+      me.polygons.foreach_set("material_index", poly_mat_index)
 
-    ob = bpy.data.objects.new(me_name, me)
-    _ensure_visible_obj(ob)
-    if ob.name not in tgt_coll.objects:
-      tgt_coll.objects.link(ob)
-    baked.append(ob)
+      me.validate()
+      me.update()
+
+      # Materials
+      for mat in materials:
+        me.materials.append(mat if mat else None)
+
+      # UVs
+      try:
+        uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
+        uv_layer.data.foreach_set("uv", uv.ravel())
+      except Exception:
+        pass
+
+      ob = bpy.data.objects.new(me_name, me)
+      _ensure_visible_obj(ob)
+      if ob.name not in tgt_coll.objects:
+        tgt_coll.objects.link(ob)
+      baked.append(ob)
+
+    else:
+      # Fallback: original Python list path
+      verts = []
+      faces_only = []
+      face_mats = []
+      uv_coords = []
+
+      materials = []
+      mat_index_lut = {}  # material -> index
+
+      for psname in ps_names:
+        d = ps_info[psname]
+        inst_obj = d["inst_obj"]
+        src_me = inst_obj.data
+
+        # Local geometry; cache topology once per source mesh
+        local_verts = [v.co.copy() for v in src_me.vertices]
+        local_faces = [list(p.vertices) for p in src_me.polygons]
+        if not local_faces:
+          # fallback quad
+          local_verts = [Vector((0.0,-0.5,0.0)), Vector((0.0,0.5,0.0)), Vector((0.0,0.5,1.0)), Vector((0.0,-0.5,1.0))]
+          local_faces = [[0,1,2,3]]
+        face_lengths = [len(f) for f in local_faces]
+        # material for this ps
+        mat = inst_obj.data.materials[0] if inst_obj.data.materials else None
+        if mat not in mat_index_lut:
+          mat_index_lut[mat] = len(materials)
+          materials.append(mat)
+        mindex = mat_index_lut[mat]
+
+        # For each instance transform, transform the whole vertex set once
+        for M in transforms.get(psname, []):
+          base_index = len(verts)
+          # transform all vertices once per instance
+          tverts = [M @ v for v in local_verts]
+          verts.extend(tverts)
+          # add faces referencing the transformed vertices
+          for f in local_faces:
+            faces_only.append([base_index + i for i in f])
+            face_mats.append(mindex)
+          # UVs per polygon, use simple patterns (consistent with previous behavior)
+          for flen in face_lengths:
+            if flen == 4:
+              uv_coords.extend(base_quad_uv)
+            elif flen == 3:
+              uv_coords.extend(base_tri_uv)
+            else:
+              # simple gradient around polygon
+              for i in range(flen):
+                t = i / max(1, flen-1)
+                uv_coords.append((t, t))
+
+      # Build mesh/object for this GC using fast foreach_set where possible
+      me_name = f"BAKE_GC_{gcname}"
+      me_old = bpy.data.meshes.get(me_name)
+      if me_old:
+        try: bpy.data.meshes.remove(me_old)
+        except Exception: pass
+      me = bpy.data.meshes.new(me_name)
+      me.from_pydata(verts, [], faces_only)
+      me.update()
+
+      # Assign materials
+      for mat in materials:
+        me.materials.append(mat if mat else None)
+
+      # Assign material indices per polygon fast
+      try:
+        me.polygons.foreach_set("material_index", face_mats)
+      except Exception:
+        for i, p in enumerate(me.polygons):
+          try: p.material_index = face_mats[i]
+          except Exception: pass
+
+
+      # UVs using foreach_set for speed
+      try:
+        uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
+        # flatten UVs
+        flat_uv = [c for uv in uv_coords for c in (uv[0], uv[1])]
+        # Ensure size matches; if not, clamp
+        total_loops = len(me.loops)
+        if len(flat_uv) < total_loops * 2:
+          flat_uv.extend([0.0, 0.0] * (total_loops - len(flat_uv)//2))
+        elif len(flat_uv) > total_loops * 2:
+          flat_uv = flat_uv[:total_loops*2]
+        uv_layer.data.foreach_set("uv", flat_uv)
+      except Exception:
+        pass
+
+      ob = bpy.data.objects.new(me_name, me)
+      _ensure_visible_obj(ob)
+      if ob.name not in tgt_coll.objects:
+        tgt_coll.objects.link(ob)
+      baked.append(ob)
 
   # Remove particle systems and their ParticleSettings
   removed_mods = 0
