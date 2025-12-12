@@ -12,6 +12,7 @@ from collections import defaultdict
 from ..core.progress import force_redraw
 from ..objects.terrainblock import import_terrain_block
 from ..objects.groundcover import build_groundcover_objects, bake_groundcover_to_mesh
+from ..materials.water import build_water_material_for_object
 from ..utils.bpy_helpers import ensure_collection, link_object_to_collection
 
 def get_euler_from_rotlist(rot):
@@ -236,6 +237,116 @@ def _build_tsstatic_instancers(ts_groups, progress=None):
         if progress and (processed % 64) == 0:
           progress.update(step=1)
 
+def _cr_float(a0, a1, a2, a3, t: float) -> float:
+  t2 = t * t
+  t3 = t2 * t
+  return 0.5 * ((2.0*a1) + (-a0 + a2)*t + (2.0*a0 - 5.0*a1 + 4.0*a2 - a3)*t2 + (-a0 + 3.0*a1 - 3.0*a2 + a3)*t3)
+
+def _cr_vec(v0, v1, v2, v3, t: float):
+  # v* are mathutils.Vector
+  return mathutils.Vector((
+    _cr_float(v0.x, v1.x, v2.x, v3.x, t),
+    _cr_float(v0.y, v1.y, v2.y, v3.y, t),
+    _cr_float(v0.z, v1.z, v2.z, v3.z, t),
+  ))
+
+def make_river_from_nodes_catmull(name, nodes, subdivide_len, parent_coll, material_builder, level_dir):
+  if not isinstance(nodes, list) or len(nodes) < 2:
+    return None
+
+  # Extract node attributes
+  P = [mathutils.Vector((float(n[0]), float(n[1]), float(n[2]))) for n in nodes]
+  W = [float(n[3]) for n in nodes]
+  D = [float(n[4]) for n in nodes]
+  N = []
+  for n in nodes:
+    v = mathutils.Vector((float(n[5]), float(n[6]), float(n[7])))
+    if v.length_squared == 0.0:
+      v = mathutils.Vector((0.0, 0.0, 1.0))
+    N.append(v.normalized())
+
+  subdivide_len = max(1e-3, float(subdivide_len or 1.0))
+
+  # Resample with Catmull–Rom
+  S_pos, S_w, S_d, S_n = [], [], [], []
+  count = len(P)
+  for i in range(count - 1):
+    p0 = P[i-1] if i-1 >= 0 else P[i]
+    p1 = P[i]
+    p2 = P[i+1]
+    p3 = P[i+2] if (i+2) < count else P[i+1]
+
+    w0 = W[i-1] if i-1 >= 0 else W[i];   w1 = W[i];   w2 = W[i+1];   w3 = W[i+2] if (i+2) < count else W[i+1]
+    d0 = D[i-1] if i-1 >= 0 else D[i];   d1 = D[i];   d2 = D[i+1];   d3 = D[i+2] if (i+2) < count else D[i+1]
+    n0 = N[i-1] if i-1 >= 0 else N[i];   n1 = N[i];   n2 = N[i+1];   n3 = N[i+2] if (i+2) < count else N[i+1]
+
+    chord_len = (p2 - p1).length
+    steps = max(1, math.ceil(chord_len / subdivide_len))
+
+    for s in range(steps + 1):
+      t = s / steps
+      if i > 0 and s == 0:
+        continue  # avoid duplicate at segment joins
+      pos = _cr_vec(p0, p1, p2, p3, t)
+      wid = _cr_float(w0, w1, w2, w3, t)
+      dep = _cr_float(d0, d1, d2, d3, t)
+      nor = _cr_vec(n0, n1, n2, n3, t)
+      if nor.length_squared == 0.0:
+        nor = mathutils.Vector((0.0, 0.0, 1.0))
+      nor.normalize()
+      S_pos.append(pos); S_w.append(wid); S_d.append(dep); S_n.append(nor)
+
+  # Build ribbon surface (top)
+  verts = []
+  for j in range(len(S_pos)):
+    if j == 0:
+      fwd = (S_pos[j+1] - S_pos[j]).normalized()
+    elif j == len(S_pos) - 1:
+      fwd = (S_pos[j] - S_pos[j-1]).normalized()
+    else:
+      fwd = (S_pos[j+1] - S_pos[j-1]).normalized()
+    if fwd.length_squared == 0.0:
+      fwd = mathutils.Vector((1.0, 0.0, 0.0))
+
+    rvec = fwd.cross(S_n[j])
+    if rvec.length_squared == 0.0:
+      # fallback if parallel
+      rvec = S_n[j].orthogonal()
+    rvec.normalize()
+
+    half = S_w[j] * 0.5
+    L = S_pos[j] - rvec * half
+    R = S_pos[j] + rvec * half
+    verts.append((L.x, L.y, L.z))
+    verts.append((R.x, R.y, R.z))
+
+  faces = []
+  for j in range(len(S_pos) - 1):
+    a = 2*j
+    b = a + 1
+    c = a + 3
+    d = a + 2
+    faces.append((a, d, c, b))
+
+  me = bpy.data.meshes.new(f"River_{name}")
+  me.from_pydata(verts, [], faces)
+  me.update()
+  obj = bpy.data.objects.new(name, me)
+  fast_link(obj, parent_coll)
+  for poly in me.polygons:
+    poly.use_smooth = True
+
+  try:
+    wmat = material_builder(name, {'class': 'River'}, level_dir)
+    if len(me.materials):
+      me.materials[0] = wmat
+    else:
+      me.materials.append(wmat)
+  except Exception as e:
+    print(f"River material error for {name}: {e}")
+
+  return obj
+
 def build_mission_objects(ctx):
   ctx.progress.update("Importing mission data...")
 
@@ -300,7 +411,46 @@ def build_mission_objects(ctx):
       sc = (scl[0], scl[1], scl[2] / 2.0)
       pz = (pos[0], pos[1], pos[2] - sc[2])
       name = i.get('name') or 'WaterBlock'
-      make_cube_fast(name, sc, pz, rot_euler, parent_coll)
+      obj = make_cube_fast(name, sc, pz, rot_euler, parent_coll)
+      try:
+        wmat = build_water_material_for_object(name, i, ctx.config.level_path)
+        if obj and obj.data:
+          if len(obj.data.materials):
+            obj.data.materials[0] = wmat
+          else:
+            obj.data.materials.append(wmat)
+        if obj.data and hasattr(bpy.types.Mesh, "polygons"):
+          for p in obj.data.polygons:
+            p.use_smooth = True
+      except Exception as e:
+        print(f"WaterBlock material error for {name}: {e}")
+
+    elif cls == 'WaterPlane':
+      sc = (scl[0], scl[1], scl[2] / 2.0)
+      pz = (pos[0], pos[1], pos[2] - sc[2])
+      name = i.get('name') or 'WaterPlane'
+      obj = make_plane_fast(name, 100000, pos, rot_euler, parent_coll)
+      try:
+        wmat = build_water_material_for_object(name, i, ctx.config.level_path)
+        if obj and obj.data:
+          if len(obj.data.materials):
+            obj.data.materials[0] = wmat
+          else:
+            obj.data.materials.append(wmat)
+        if obj.data and hasattr(bpy.types.Mesh, "polygons"):
+          for p in obj.data.polygons:
+            p.use_smooth = True
+      except Exception as e:
+        print(f"WaterPlane material error for {name}: {e}")
+
+    elif cls == 'River':
+      name = i.get('name') or 'River'
+      nodes = i.get('nodes') or []
+      subdiv_len = i.get('subdivideLength') or i.get('SubdivideLength') or 1.0
+      make_river_from_nodes_catmull(
+        name, nodes, float(subdiv_len),
+        parent_coll, build_water_material_for_object, ctx.config.level_path
+      )
 
     elif cls == 'TerrainBlock':
       parent_coll = get_parent_collection(i.get('__parent'))

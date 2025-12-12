@@ -13,13 +13,11 @@
 #     - multiscatter instead of nishita
 #     - check other issues
 # - add support for older forest format
-# - water pane support, implement water materials
 # - light support, sync light energy properly
 # - zip support, rework how we handle zip
 # - mesh road support
 # - decal road support
 # - prefabs support
-# - rivers support
 # - decal support
 # - particle support
 # - ts support
@@ -27,6 +25,7 @@
 # - integrate DTS importer
 # - hide base position objects in different scene
 # - asset link support
+# - handle all classes in level even if we dont support them
 
 import bpy
 from .pipeline import import_level
