@@ -9,23 +9,24 @@ import bpy
 import os
 from ..core.paths import resolve_beamng_path, exists_insensitive, get_real_case_path
 from ..utils.bpy_helpers import ensure_collection, pick_highest_lod
+from .beamng_collada.collada_import import import_collada_file_to_blender
 
 def import_collada_shapes(ctx):
   shapes_lib = ensure_collection('ShapesLib')
   for shp in ctx.shapes:
-    if not shp.endswith('.dae'):
+    if not shp.lower().endswith('.dae'):
       ctx.progress.update(f"Skipping non-DAE: {os.path.basename(shp)}", step=1)
       continue
-    ctx.progress.update(f"Importing: {os.path.basename(shp)}", step=1)
+    ctx.progress.update(f"Importing BeamNG Collada: {os.path.basename(shp)}", step=1)
     p = resolve_beamng_path(shp, ctx.config.level_path, None)
     if not exists_insensitive(p):
       print(f"WARN: Collada file not found: {p}")
       continue
     p = get_real_case_path(p)
     try:
-      bpy.ops.wm.collada_import(filepath=str(p), auto_connect=True, find_chains=True, fix_orientation=True)
+      import_collada_file_to_blender(str(p), shapes_lib, up_axis='Z_UP', ignore_node_scale=False)
     except Exception as e:
-      print(f"WARN: Collada import failed: {p} ({e})")
+      print(f"WARN: Collada custom import failed: {p} ({e})")
       continue
 
     imported = list(bpy.context.selected_objects)

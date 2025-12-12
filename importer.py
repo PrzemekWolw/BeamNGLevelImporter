@@ -10,6 +10,8 @@
 
 ######## todo ########
 # - basic 5.x support...
+#     - multiscatter instead of nishita
+#     - check other issues
 # - add support for older forest format
 # - water pane support, implement water materials
 # - light support, sync light energy properly
