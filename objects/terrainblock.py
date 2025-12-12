@@ -391,7 +391,7 @@ def import_terrain_block(ctx, simobj):
     material_names=mat_names
   )
 
-  from ..objects.mission import make_matrix
+  from ..objects.common import make_matrix
   pos = simobj.get('position') or [0, 0, 0]
   rot = simobj.get('rotationMatrix') or None
 

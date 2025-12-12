@@ -15,8 +15,6 @@
 # - add support for older forest format
 # - light support, sync light energy properly
 # - zip support, rework how we handle zip
-# - mesh road support
-# - decal road support
 # - prefabs support
 # - decal support
 # - particle support
@@ -26,6 +24,7 @@
 # - hide base position objects in different scene
 # - asset link support
 # - handle all classes in level even if we dont support them
+# - procedural meshes, trackbuilder, etc
 
 import bpy
 from .pipeline import import_level
