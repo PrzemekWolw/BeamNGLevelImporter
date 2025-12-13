@@ -27,3 +27,5 @@ class ImportContext:
   forest_names: Dict[str, str]
   shapes: List[str]
   terrain_mats: List[str]
+  decal_defs: Dict[str, Dict]
+  decal_instances: Dict[str, List[List[float]]]

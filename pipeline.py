@@ -43,6 +43,7 @@ def import_level(scene, props, operator=None):
   import_path = (level_path / 'main').resolve()
   forest_path = (level_path / 'forest').resolve()
   managed_item_data = (level_path / 'art' / 'forest').resolve()
+  managed_decal_data = (level_path / 'art' / 'decals').resolve()
 
   level_data = []
   forest_data = []
@@ -52,6 +53,8 @@ def import_level(scene, props, operator=None):
   forest_names = {}
   shapes = []
   terrain_mats = []
+  decals_defs = {}
+  decal_instances = {}
 
   if import_path.exists():
     for subdir, dirs, files in os.walk(import_path):
@@ -84,6 +87,27 @@ def import_level(scene, props, operator=None):
           forest_items = data
       except Exception:
         pass
+
+  if managed_decal_data.exists():
+    for file in managed_decal_data.glob('*managedDecalData.json'):
+      try:
+        data = decode_sjson_file(file)
+        if isinstance(data, dict):
+          for k, v in data.items():
+            if isinstance(v, dict) and v.get('class') == 'DecalData':
+              decals_defs[k] = v
+      except Exception:
+        pass
+
+  for file in level_path.glob('*.decals.json'):
+    try:
+      data = decode_sjson_file(file)
+      if isinstance(data, dict) and isinstance(data.get('instances'), dict):
+        for dec_name, inst_list in data['instances'].items():
+          if isinstance(inst_list, list):
+            decal_instances.setdefault(dec_name, []).extend(inst_list)
+    except Exception:
+      pass
 
   for i in level_data:
     if i.get('class') == 'SimGroup':
@@ -121,7 +145,9 @@ def import_level(scene, props, operator=None):
     forest_items=forest_items,
     forest_names=forest_names,
     shapes=shapes,
-    terrain_mats=terrain_mats
+    terrain_mats=terrain_mats,
+    decal_defs=decals_defs,
+    decal_instances=decal_instances
   )
 
   texture_sets = {}
@@ -205,6 +231,9 @@ def import_level(scene, props, operator=None):
 
     build_mission_objects(ctx)
     build_forest_objects(ctx)
+
+    from .objects.decals import build_decal_objects
+    build_decal_objects(ctx)
 
     force_redraw()
     info("BeamNG Import finished")
