@@ -15,7 +15,6 @@
 # - add support for older forest format
 # - light support, sync light energy properly
 # - zip support, rework how we handle zip
-# - prefabs support
 # - particle support
 # - ts support
 # - export support

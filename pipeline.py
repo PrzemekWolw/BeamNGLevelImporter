@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .core.types import ImportConfig, ImportContext
 from .core.progress import ProgressHelper, force_redraw
-from .core.paths import extract_zip_level_root
+from .core.paths import extract_zip_level_root, resolve_beamng_path
 from .core.sjson import read_json_records, decode_sjson_file
 from .materials.v15 import build_pbr_v15_material
 from .materials.v0 import build_pbr_v0_material
@@ -108,6 +108,99 @@ def import_level(scene, props, operator=None):
             decal_instances.setdefault(dec_name, []).extend(inst_list)
     except Exception:
       pass
+
+  def _offset_nodes(nodes, dpos):
+    if not isinstance(nodes, list):
+      return nodes
+    out = []
+    for n in nodes:
+      if isinstance(n, dict):
+        nn = dict(n)
+        p = nn.get('point') or nn.get('position') or nn.get('pos')
+        if isinstance(p, (list, tuple)) and len(p) == 3:
+          nn['point'] = [p[0] + dpos[0], p[1] + dpos[1], p[2] + dpos[2]]
+        out.append(nn)
+      else:
+        out.append(n)
+    return out
+
+  prefabs_expanded = []
+  prefab_roots = []
+  to_remove_prefab_records = []
+  for rec in list(level_data):
+    if not isinstance(rec, dict) or rec.get('class') != 'Prefab':
+      continue
+    prefab_fn = rec.get('filename')
+    if not prefab_fn:
+      continue
+    prefab_path = resolve_beamng_path(prefab_fn, level_path)
+    if not prefab_path.exists():
+      info(f"Prefab file not found: {prefab_fn} -> {prefab_path}")
+      continue
+
+    prefab_name = rec.get('name') or rec.get('internalName') or prefab_path.stem
+    prefab_parent = rec.get('__parent') or 'MissionGroup'
+    prefab_pos = rec.get('position') or [0, 0, 0]
+    if not isinstance(prefab_pos, (list, tuple)) or len(prefab_pos) != 3:
+      prefab_pos = [0, 0, 0]
+
+    prefab_roots.append({
+      'class': 'SimGroup',
+      'name': prefab_name,
+      '__parent': prefab_parent
+    })
+
+    try:
+      prefab_records = read_json_records(prefab_path)
+    except Exception as e:
+      info(f"Failed to read prefab {prefab_path}: {e}")
+      continue
+
+    group_name_map = {}
+    for r in prefab_records:
+      if isinstance(r, dict) and r.get('class') == 'SimGroup':
+        old = r.get('name') or 'Group'
+        group_name_map[old] = f"{prefab_name}_{old}"
+
+    for r in prefab_records:
+      if not isinstance(r, dict):
+        continue
+      r2 = dict(r)
+      cls = r2.get('class')
+
+      pos = r2.get('position')
+      if isinstance(pos, (list, tuple)) and len(pos) == 3:
+        r2['position'] = [pos[0] + prefab_pos[0], pos[1] + prefab_pos[1], pos[2] + prefab_pos[2]]
+
+      if 'nodes' in r2:
+        r2['nodes'] = _offset_nodes(r2.get('nodes'), prefab_pos)
+
+      parent = r2.get('__parent')
+      if cls == 'SimGroup':
+        oldname = r2.get('name') or 'Group'
+        r2['name'] = group_name_map.get(oldname, f"{prefab_name}_{oldname}")
+        if parent in group_name_map:
+          r2['__parent'] = group_name_map[parent]
+        else:
+          r2['__parent'] = prefab_name
+      else:
+        if parent in group_name_map:
+          r2['__parent'] = group_name_map[parent]
+        else:
+          r2['__parent'] = prefab_name
+
+      prefabs_expanded.append(r2)
+
+    to_remove_prefab_records.append(rec)
+
+  if prefabs_expanded or prefab_roots:
+    level_data.extend(prefab_roots)
+    level_data.extend(prefabs_expanded)
+    for r in to_remove_prefab_records:
+      try:
+        level_data.remove(r)
+      except ValueError:
+        pass
 
   for i in level_data:
     if i.get('class') == 'SimGroup':
