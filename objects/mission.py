@@ -30,6 +30,9 @@ def build_mission_objects(ctx):
   ts_groups = defaultdict(list)
   groundcovers_present = False
 
+  terrain_target_obj = None
+  pending_decalroads = []
+
   for idx, i in enumerate(ctx.level_data):
     cls = i.get('class')
     parent_coll = get_parent_collection(i.get('__parent'))
@@ -130,7 +133,12 @@ def build_mission_objects(ctx):
 
     elif cls == 'DecalRoad':
       name = i.get('name') or 'DecalRoad'
-      make_decal_road(name, i, parent_coll)
+      if terrain_target_obj is not None:
+        i['useShrinkwrap'] = True
+        i['shrinkwrapTarget'] = terrain_target_obj.name
+        make_decal_road(name, i, parent_coll)
+      else:
+        pending_decalroads.append((name, i.copy(), parent_coll))
 
     elif cls == 'MeshRoad':
       name = i.get('name') or 'MeshRoad'
@@ -141,6 +149,9 @@ def build_mission_objects(ctx):
       terrain_obj = import_terrain_block(ctx, i)
       if terrain_obj:
         fast_link(terrain_obj, parent_coll)
+        if terrain_target_obj is None and getattr(terrain_obj, "type", None) == 'MESH':
+          terrain_target_obj = terrain_obj
+
 
     elif cls == 'TSStatic':
       shapeName = i.get('shapeName')
@@ -160,11 +171,20 @@ def build_mission_objects(ctx):
       if (idx & 127) == 0:
         force_redraw()
 
-  # Build TSStatic instancers
-  if ts_groups:
-    build_tsstatic_instancers(ts_groups, progress=ctx.progress)
-
   # Build GroundCover instancers
   if groundcovers_present:
     build_groundcover_objects(ctx)
     bake_groundcover_to_mesh(remove_particles=True)
+
+  if pending_decalroads:
+    if terrain_target_obj is not None:
+      for name, data, coll in pending_decalroads:
+        data['shrinkwrapTarget'] = terrain_target_obj.name
+        make_decal_road(name, data, coll)
+    else:
+      for name, data, coll in pending_decalroads:
+        make_decal_road(name, data, coll)
+
+  # Build TSStatic instancers
+  if ts_groups:
+    build_tsstatic_instancers(ts_groups, progress=ctx.progress)
