@@ -68,7 +68,16 @@ def _get_material_or_fallback(name: str):
   if mat:
     try:
       mat.blend_method = 'BLEND'
-      mat.shadow_method = 'NONE'
+      if hasattr(mat, "shadow_method"):
+        try:
+          mat.shadow_method = 'NONE'
+        except Exception:
+          pass
+      elif hasattr(mat, "shadow_mode"):
+        try:
+          mat.shadow_mode = 'NONE'
+        except Exception:
+          pass
       mat.use_backface_culling = True
       mat.show_transparent_back = False
     except Exception:
@@ -84,7 +93,16 @@ def _get_material_or_fallback(name: str):
   bsdf.inputs['Alpha'].default_value = 1.0
   nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
   mat.blend_method = 'BLEND'
-  mat.shadow_method = 'NONE'
+  if hasattr(mat, "shadow_method"):
+    try:
+      mat.shadow_method = 'NONE'
+    except Exception:
+      pass
+  elif hasattr(mat, "shadow_mode"):
+    try:
+      mat.shadow_mode = 'NONE'
+    except Exception:
+      pass
   mat.use_backface_culling = True
   mat.show_transparent_back = False
   return mat

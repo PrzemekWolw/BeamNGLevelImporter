@@ -238,14 +238,12 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       if u0i is not None and uv0_arr.size and sr_uv0:
         uo = sr_uv0.offsets or [0,1]
         uv = gather2(uv0_arr, u0i, uv0_stride, U.comp(uo,0,0), U.comp(uo,1,1), sr_uv0.accessor_offset)
-        uv[:, 1] = 1.0 - uv[:, 1]
         loop_u0 = uv
 
       loop_u1 = None
       if u1i is not None and uv1_arr.size and sr_uv1:
         uo1 = sr_uv1.offsets or [0,1]
         uv = gather2(uv1_arr, u1i, uv1_stride, U.comp(uo1,0,0), U.comp(uo1,1,1), sr_uv1.accessor_offset)
-        uv[:, 1] = 1.0 - uv[:, 1]
         loop_u1 = uv
 
       uv0_list.append(loop_u0)
