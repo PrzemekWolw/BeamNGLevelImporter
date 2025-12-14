@@ -23,6 +23,7 @@ import bpy
 from . import ui
 from . import importer
 from . import properties as props_mod
+from . import materials_loader
 
 classes = (
   props_mod.BeamNGLevelImporterproperties,
@@ -32,6 +33,7 @@ classes = (
 
 def register():
   from bpy.utils import register_class
+  materials_loader.register_materials_loader()
   for cls in classes:
     register_class(cls)
   if not hasattr(bpy.types.Scene, "BeamNGLevelImporter"):
@@ -41,6 +43,7 @@ def register():
 
 def unregister():
   from bpy.utils import unregister_class
+  materials_loader.unregister_materials_loader()
   if hasattr(bpy.types.Scene, "BeamNGLevelImporter"):
     try:
       del bpy.types.Scene.BeamNGLevelImporter
