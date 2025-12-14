@@ -75,7 +75,8 @@ def build_mission_objects(ctx):
       rot_euler_rot.rotate_axis('X', math.radians(90))
       brightness = float(i.get('brightness') or 1) * 100.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
-      make_light_fast('SPOT', name, pos, rot_euler_rot, scl, brightness, color, parent_coll)
+      angle = float(i.get('outerAngle') or math.radians(45))
+      make_light_fast('SPOT', name, pos, rot_euler_rot, scl, brightness, color, parent_coll, angle)
 
     elif cls == 'PointLight':
       name = i.get('name') or 'PointLight'

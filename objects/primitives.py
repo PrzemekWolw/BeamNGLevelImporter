@@ -24,12 +24,14 @@ def make_speaker_fast(name, loc, rot_euler, scale, parent_coll):
   fast_link(obj, parent_coll)
   return obj
 
-def make_light_fast(kind, name, loc, rot_euler, scale, energy, color, parent_coll):
+def make_light_fast(kind, name, loc, rot_euler, scale, energy, color, parent_coll, angle=None):
   lamp = bpy.data.lights.new(name=name, type=kind)
   if energy is not None:
     lamp.energy = float(energy)
   if color is not None:
     lamp.color = (float(color[0]), float(color[1]), float(color[2]))
+  if angle is not None and kind == 'SPOT':
+    lamp.spot_size = angle
   obj = bpy.data.objects.new(name, lamp)
   obj.matrix_world = make_matrix(loc, rot_euler, scale or (1,1,1))
   fast_link(obj, parent_coll)
