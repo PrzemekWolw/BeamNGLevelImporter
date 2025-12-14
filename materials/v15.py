@@ -281,7 +281,21 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       place(met_img, layer_x-220, COL_MR, frame)
       sep, rname = make_separate_r(nt); place(sep, layer_x, COL_MR, frame, label='Metallic R')
       link(links, met_img.outputs['Color'], sep.inputs[0])
-      metallic_stack = sep.outputs[rname]
+      met_val = sep.outputs[rname]
+      if abs(metallicFactor - 0.0) > 1e-6:
+        mfac = value_node(nt, metallicFactor, f'MetallicFac L{idx}')
+        place(mfac, layer_x+180, COL_MR, frame, label=f'Metallic Fac {metallicFactor:.2f}')
+        mmul = new_node(nt, 'ShaderNodeMath', label='Metallic * Fac', loc=(layer_x+360, COL_MR), parent=frame)
+        mmul.operation = 'MULTIPLY'
+        link(links, met_val, mmul.inputs[0])
+        link(links, mfac.outputs[0], mmul.inputs[1])
+        met_val = mmul.outputs['Value']
+      metallic_stack = met_val
+    else:
+      if abs(metallicFactor - 0.0) > 1e-6:
+        mnode = value_node(nt, metallicFactor, f'MetallicFac L{idx}')
+        place(mnode, layer_x, COL_MR, frame, label=f'Metallic {metallicFactor:.2f}')
+        metallic_stack = mnode.outputs[0]
     if rou_path:
       rou_img = connect_img(nt, rou_path, level_dir, 'Non-Color', rou_uv2, uv2_name, uv1_name, label=f'Roughness L{idx}')
       place(rou_img, layer_x-220, COL_MR-80, frame)
