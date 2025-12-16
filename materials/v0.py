@@ -112,6 +112,12 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
   normal_out = None
   top_frame = new_frame(nt, f'{mat_name} (v0)', color=(0.12, 0.12, 0.12), loc=(LAYER_X_START-80, COL_BASE+200))
 
+  alphaTest = try_get(matdef, 'alphaTest', None)
+  alphaRef = try_get(matdef, 'alphaRef', None)
+
+  is_translucent = bool(try_get(matdef, 'translucent', False))
+  translucent_zwrite = bool(try_get(matdef, 'translucentZWrite', False))
+
   for idx, layer in enumerate(stages_iter):
     layer_x = LAYER_X_START + idx * LAYER_X_STEP
     fcol = color_for_layer(idx)
@@ -124,6 +130,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     detailNormFac   = get_scalar(layer, 'detailNormalMapStrength', None, 0.0)
     useVertColor    = bool(try_get(layer, "vertColor", False) or try_get(layer, "vtxColorToBaseColor", False))
     detScale        = try_get(layer, 'detailScale', None)
+
 
     bc_path   = get_map(layer, ['diffuseMap','colorMap','baseTex'])
     overlay   = get_map(layer, ['overlayMap'])
@@ -231,7 +238,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       link(links, sep.outputs[rname], op_mul.inputs[1])
       layer_opacity_val = op_mul
     # Multiply layer opacity by diffuse/base color alpha if present
-    if bc_path:
+    if bc_path and (alphaTest and isinstance(alphaRef, int) or is_translucent or translucent_zwrite):
       # bc_img exists from the Base Color block above
       bc_alpha = bc_img.outputs.get('Alpha')
       if bc_alpha is not None:
@@ -359,11 +366,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     link(links, normal_out, bsdf.inputs['Normal'])
 
   link(links, alpha_prev, bsdf.inputs['Alpha'])
-  alphaTest = try_get(matdef, 'alphaTest', None)
-  alphaRef = try_get(matdef, 'alphaRef', None)
-
-  is_translucent = bool(try_get(matdef, 'translucent', False))
-  translucent_zwrite = bool(try_get(matdef, 'translucentZWrite', False))
 
   if alphaTest and isinstance(alphaRef, int):
     set_material_blend_shadow(mat, blend_mode='CLIP', alpha_threshold=(alphaRef/255.0))
