@@ -110,7 +110,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
   alpha_prev = value_node(nt, 0.0, 'AlphaPrev').outputs[0]
   roughness_stack = None
   normal_out = None
-  any_opacity = False
   top_frame = new_frame(nt, f'{mat_name} (v0)', color=(0.12, 0.12, 0.12), loc=(LAYER_X_START-80, COL_BASE+200))
 
   for idx, layer in enumerate(stages_iter):
@@ -147,9 +146,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     rf_uv2   = use_uv2(layer, ['reflectivityMapUseUV'])
     ao_uv2   = use_uv2(layer, ['ambientOcclusionMapUseUV'])
     pal_uv2  = use_uv2(layer, ['colorPaletteMapUseUV'])
-
-    if op_path or abs(opacityFactor - 1.0) > 1e-6:
-      any_opacity = True
 
     bc_factor = rgb_node(nt, (baseColorFactor[0], baseColorFactor[1], baseColorFactor[2], baseColorFactor[3]), f'BaseFactor L{idx}')
     place(bc_factor, layer_x, COL_BASE, frame, label='Base Color Factor')
@@ -245,7 +241,19 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       link(links, layer_opacity_val.outputs[0], op_mul.inputs[0])
       link(links, sep.outputs[rname], op_mul.inputs[1])
       layer_opacity_val = op_mul
+    # Multiply layer opacity by diffuse/base color alpha if present
+    if bc_path:
+      # bc_img exists from the Base Color block above
+      bc_alpha = bc_img.outputs.get('Alpha')
+      if bc_alpha is not None:
+        op_mul_bc = new_node(nt, 'ShaderNodeMath', label='Opacity * DiffuseA', loc=(layer_x+360, COL_ALPHA-30), parent=frame)
+        op_mul_bc.operation = 'MULTIPLY'
+        link(links, layer_opacity_val.outputs[0], op_mul_bc.inputs[0])
+        link(links, bc_alpha, op_mul_bc.inputs[1])
+        layer_opacity_val = op_mul_bc
+    # Clamp after combining all alpha contributions
     cl = clamp_01(nt, links, layer_opacity_val.outputs[0])
+    place(cl, layer_x+560, COL_ALPHA-30, frame, label='Opacity Clamp')  # moved a bit to the right
     place(cl, layer_x+380, COL_ALPHA-30, frame, label='Opacity Clamp')
     layer_alpha = cl.outputs['Result']
 
@@ -362,16 +370,23 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     link(links, normal_out, bsdf.inputs['Normal'])
 
   link(links, alpha_prev, bsdf.inputs['Alpha'])
-
   alphaTest = try_get(matdef, 'alphaTest', None)
   alphaRef = try_get(matdef, 'alphaRef', None)
+
+  is_translucent = bool(try_get(matdef, 'translucent', False))
+  translucent_zwrite = bool(try_get(matdef, 'translucentZWrite', False))
+
   if alphaTest and isinstance(alphaRef, int):
     set_material_blend_shadow(mat, blend_mode='CLIP', alpha_threshold=(alphaRef/255.0))
-  elif any_opacity:
+  elif is_translucent or translucent_zwrite:
     set_material_blend_shadow(mat, blend_mode='BLEND')
+    try:
+      mat.shadow_method = 'NONE'
+    except Exception:
+      pass
   else:
     set_material_blend_shadow(mat, blend_mode='OPAQUE')
-
   if hasattr(mat, 'use_backface_culling'):
     dbl = try_get(matdef, 'doubleSided', False)
     mat.use_backface_culling = not bool(dbl)
+

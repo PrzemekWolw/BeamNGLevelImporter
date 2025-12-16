@@ -128,7 +128,6 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
   emissive_stack = None
   coat_stack = None
   coat_rough_stack = None
-  any_opacity = False
   top_frame = new_frame(nt, f'{mat_name} (PBR v1.5)', color=(0.12, 0.12, 0.12), loc=(LAYER_X_START-80, COL_BASE+200))
 
   for idx, layer in enumerate(stages_iter):
@@ -172,9 +171,6 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
     ccr_uv2 = use_uv2(layer, ['clearCoatRoughnessMapUseUV'])
     det_col_uv2 = use_uv2(layer, ['detailMapUseUV','baseColorDetailMapUseUV'])
     det_nrm_uv2 = use_uv2(layer, ['normalDetailMapUseUV','detailNormalMapUseUV'])
-
-    if op_path or abs(opacityFactor - 1.0) > 1e-6:
-      any_opacity = True
 
     bc_factor = rgb_node(nt, (baseColorFactor[0], baseColorFactor[1], baseColorFactor[2], baseColorFactor[3]), f'BaseFactor L{idx}')
     place(bc_factor, layer_x, COL_BASE, frame, label='Base Color Factor')
@@ -447,20 +443,24 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
   link(links, alpha_prev, bsdf.inputs['Alpha'])
   alphaTest = try_get(matdef, 'alphaTest', None)
   alphaRef = try_get(matdef, 'alphaRef', None)
-  alphaTestValue = try_get(matdef, 'alphaTestValue', None) or try_get(matdef, 'AlphaTestValue', None)
+  is_translucent = bool(try_get(matdef, 'translucent', False))
+  translucent_zwrite = bool(try_get(matdef, 'translucentZWrite', False))
+
   if alphaTest and isinstance(alphaRef, int):
     set_material_blend_shadow(mat, blend_mode='CLIP', alpha_threshold=(alphaRef/255.0))
-  elif any_opacity:
-    if alphaTestValue is not None:
-      set_material_blend_shadow(mat, blend_mode='CLIP', alpha_threshold=alphaTestValue)
-    else:
-      set_material_blend_shadow(mat, blend_mode='BLEND')
+  elif is_translucent or translucent_zwrite:
+    set_material_blend_shadow(mat, blend_mode='BLEND')
+    try:
+      mat.shadow_method = 'NONE'  # Disable shadow casting for translucent
+    except Exception:
+      pass
   else:
     set_material_blend_shadow(mat, blend_mode='OPAQUE')
 
   if hasattr(mat, 'use_backface_culling'):
     dbl = try_get(matdef, 'doubleSided', False)
     mat.use_backface_culling = not bool(dbl)
+
   try:
     spec_sock = get_bsdf_input(bsdf, ['Specular', 'Specular IOR Level'])
     spec_sock.default_value = 0.5
