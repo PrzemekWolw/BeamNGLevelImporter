@@ -197,10 +197,13 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
     if ao_path:
       ao_img = connect_img(nt, ao_path, level_dir, 'Non-Color', ao_uv2, uv2_name, uv1_name, label=f'AO L{idx}')
       place(ao_img, layer_x-220, COL_BASE-120, frame)
+      ao_sep, ao_rname = make_separate_r(nt)
+      place(ao_sep, layer_x, COL_BASE-120, frame, label='AO R')
+      link(links, ao_img.outputs['Color'], ao_sep.inputs[0])
       ao_mul = new_node(nt, 'ShaderNodeMixRGB', label='Base * AO', loc=(layer_x+580, COL_BASE-120), parent=frame)
       ao_mul.blend_type='MULTIPLY'; ao_mul.inputs['Fac'].default_value=1.0
       link(links, this_color, ao_mul.inputs['Color1'])
-      link(links, ao_img.outputs['Color'], ao_mul.inputs['Color2'])
+      link(links, ao_sep.outputs[ao_rname], ao_mul.inputs['Color2'])
       this_color = ao_mul.outputs['Color']
 
     if det_col_path and abs(detailBaseFac) > 1e-6:

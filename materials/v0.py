@@ -82,7 +82,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
   LAYER_X_START = -1400
   LAYER_X_STEP = 520
 
-  COL_BASE = 0        # base color / overlays / palette / AO / vcol / detail color
+  COL_BASE = 0        # base color / overlays / palette / vcol / detail color
   COL_ALPHA = -240    # opacity
   COL_SPEC = -460     # specular + roughness
   COL_REFL = -540     # reflectivity
@@ -133,7 +133,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     op_path   = get_map(layer, ['opacityMap'])
     spec_path = get_map(layer, ['specularMap'])
     refl_path = get_map(layer, ['reflectivityMap'])
-    ao_path   = get_map(layer, ['ambientOcclusionMap'])
     pal_path  = get_map(layer, ['colorPaletteMap'])
 
     bc_uv2   = use_uv2(layer, ['diffuseMapUseUV'])
@@ -144,7 +143,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     op_uv2   = use_uv2(layer, ['opacityMapUseUV'])
     sp_uv2   = use_uv2(layer, ['specularMapUseUV'])
     rf_uv2   = use_uv2(layer, ['reflectivityMapUseUV'])
-    ao_uv2   = use_uv2(layer, ['ambientOcclusionMapUseUV'])
     pal_uv2  = use_uv2(layer, ['colorPaletteMapUseUV'])
 
     bc_factor = rgb_node(nt, (baseColorFactor[0], baseColorFactor[1], baseColorFactor[2], baseColorFactor[3]), f'BaseFactor L{idx}')
@@ -181,15 +179,6 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       link(links, this_color, mix.inputs['Color1'])
       link(links, ov_img.outputs['Color'], mix.inputs['Color2'])
       this_color = mix.outputs['Color']
-
-    if ao_path:
-      ao_img = connect_img(nt, ao_path, level_dir, 'Non-Color', ao_uv2, uv2_name, uv1_name, label=f'AO L{idx}')
-      place(ao_img, layer_x-220, COL_BASE-180, frame)
-      ao_mul = new_node(nt, 'ShaderNodeMixRGB', label='Base * AO', loc=(layer_x+180, COL_BASE-180), parent=frame)
-      ao_mul.blend_type='MULTIPLY'; ao_mul.inputs['Fac'].default_value=1.0
-      link(links, this_color, ao_mul.inputs['Color1'])
-      link(links, ao_img.outputs['Color'], ao_mul.inputs['Color2'])
-      this_color = ao_mul.outputs['Color']
 
     if useVertColor:
       vcol = new_node(nt, 'ShaderNodeAttribute', label='Vertex Color', loc=(layer_x-220, COL_BASE-240), parent=frame)
