@@ -15,7 +15,8 @@ from .core.progress import ProgressHelper, force_redraw
 from .core.paths import extract_zip_level_root, resolve_beamng_path, resolve_any_beamng_path
 from .core.import_sources import (
   load_main_records, load_forest_records, load_decal_sets, load_terrain_meta,
-  scan_material_json_packs, scan_material_cs_packs, load_forest_item_db
+  scan_material_json_packs, scan_material_cs_packs, load_forest_item_db,
+  scan_material_packs_in_zip,
 )
 from .core.normalize import normalize_records, normalize_forest
 from .materials.v15 import build_pbr_v15_material
@@ -29,7 +30,7 @@ from .objects.decals import build_decal_objects
 from .utils.bpy_helpers import ensure_collection, delete_object_if_exists, dedupe_materials
 from .core import ts_parser
 from .core.sjson import read_json_records
-from .core.level_scan import last_scan, build_overlay_for_level
+from .core.level_scan import last_scan, build_overlay_for_level, last_assets
 
 def _info(op, msg):
   if op: op.report({'INFO'}, msg)
@@ -73,7 +74,6 @@ def import_level(scene, props, operator=None):
   if not level_path:
     # Manual/zip fallback
     level_path = Path(props.levelpath).resolve() if props.levelpath else None
-
     if getattr(props, "enable_zip", False) and getattr(props, "zippath", ""):
       root = extract_zip_level_root(Path(props.zippath), temp_path)
       if not root or not root.exists():
@@ -146,19 +146,16 @@ def import_level(scene, props, operator=None):
       if isinstance(r, dict) and r.get('class') == 'SimGroup':
         old = r.get('name') or 'Group'
         group_name_map[old] = f"{prefab_name}_{old}"
-
     for r in prefab_records:
       if not isinstance(r, dict):
         continue
       r2 = dict(r)
       cls = r2.get('class')
-
       pos = r2.get('position')
       if isinstance(pos, (list, tuple)) and len(pos) == 3:
         r2['position'] = [pos[0] + prefab_pos[0], pos[1] + prefab_pos[1], pos[2] + prefab_pos[2]]
       if 'nodes' in r2:
         r2['nodes'] = _offset_nodes(r2.get('nodes'), prefab_pos)
-
       parent = r2.get('__parent')
       if cls == 'SimGroup':
         oldname = r2.get('name') or 'Group'
@@ -259,7 +256,6 @@ def import_level(scene, props, operator=None):
   try:
     ctx.progress.begin(total_steps, "BeamNG: preparing import...")
 
-    # Materials
     for pack in ctx.materials_packs:
       if not isinstance(pack, dict):
         continue
@@ -279,9 +275,47 @@ def import_level(scene, props, operator=None):
           build_pbr_v0_material(name, v, ctx.config.level_path)
         ctx.progress.update(step=1)
 
+    # 2) Extra materials from all /art providers (skip existing)
+    assets_idx = last_assets()
+    if assets_idx and assets_idx.art:
+      extra_packs: list[dict] = []
+      # Gather packs
+      for prov in assets_idx.art:
+        if prov.dir_root and prov.dir_root.exists():
+          extra_packs.extend(scan_material_json_packs(prov.dir_root))
+          extra_packs.extend(scan_material_cs_packs(prov.dir_root))
+        elif prov.zip_path and prov.zip_path.exists():
+          extra_packs.extend(scan_material_packs_in_zip(prov.zip_path))
+      # Build only missing materials
+      for pack in extra_packs:
+        if not isinstance(pack, dict):
+          continue
+        for _, v in pack.items():
+          if not isinstance(v, dict):
+            continue
+          cls = v.get('class')
+          if cls == "TerrainMaterial":
+            nm = v.get('internalName') or v.get('name')
+            if nm and bpy.data.materials.get(nm):
+              continue
+            if use_v15_terrain:
+              build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+            else:
+              build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+          elif cls == "Material" or (v.get('mapTo') and (v.get('version') in (None, 0, 1.5))):
+            name = v.get('mapTo') if v.get('mapTo') not in (None, 'unmapped_mat') else v.get('name')
+            if not name:
+              continue
+            if bpy.data.materials.get(name):
+              continue
+            if v.get('version') == 1.5:
+              build_pbr_v15_material(name, v, ctx.config.level_path)
+            else:
+              build_pbr_v0_material(name, v, ctx.config.level_path)
+        ctx.progress.update(step=1)
+
     # Shapes
     import_collada_shapes(ctx)
-
     for d in ("Cube", "Light", "Lamp", "Camera"):
       delete_object_if_exists(d)
     dedupe_materials()
@@ -294,7 +328,6 @@ def import_level(scene, props, operator=None):
           if c and p and c.name not in [ch.name for ch in p.children]:
             p.children.link(c)
 
-    # Build objects
     build_mission_objects(ctx)
     build_forest_objects(ctx)
 

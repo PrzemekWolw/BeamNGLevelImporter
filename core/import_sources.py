@@ -8,8 +8,9 @@
 from __future__ import annotations
 import os
 import json
+import zipfile
 from pathlib import Path
-from .sjson import read_json_records, decode_sjson_file
+from .sjson import read_json_records, decode_sjson_file, decode_sjson_text
 from . import ts_parser
 from .forest_io import parse_forest4_lines, parse_forest_v23, read_fkdf
 from .decals_io import read_decals_json, read_decals_tddf
@@ -139,7 +140,6 @@ def load_decal_sets(level_path: Path) -> tuple[dict, dict]:
   managed = (level_path / 'art' / 'decals').resolve()
   if managed.exists():
     for file in managed.glob('*managedDecalData.json*'):
-      # includes .json and .json.link
       fp = file
       if fp.suffix.lower() == '.link':
         fp = _maybe_deref_link(fp, level_path)
@@ -154,7 +154,6 @@ def load_decal_sets(level_path: Path) -> tuple[dict, dict]:
       except Exception:
         pass
 
-  # Instances: *.decals.json and also *.decals.json.link
   dec_json = list(level_path.glob('*.decals.json')) + list(level_path.glob('*.decals.json.link'))
   if dec_json:
     for fp in dec_json:
@@ -172,7 +171,6 @@ def load_decal_sets(level_path: Path) -> tuple[dict, dict]:
         pass
     return decals_defs, decal_instances
 
-  # Binary: *.decals plus *.decals.link
   dec_bin = list(level_path.glob('*.decals')) + list(level_path.glob('*.decals.link'))
   for fp in dec_bin:
     if fp.suffix.lower() == '.link':
@@ -296,6 +294,101 @@ def scan_material_cs_packs(level_path: Path) -> list[dict]:
         packs.append(pack)
   return packs
 
+def scan_material_packs_in_zip(zip_path: Path) -> list[dict]:
+  """
+  Scan a zip for all materials.json and .materials.cs, return list of pack dicts.
+  """
+  packs: list[dict] = []
+  try:
+    with zipfile.ZipFile(zip_path, "r") as zf:
+      names = zf.namelist()
+      # JSON packs
+      for name in names:
+        nl = name.replace("\\", "/")
+        ln = nl.lower()
+        if not ln.endswith("materials.json"):
+          continue
+        try:
+          with zf.open(name, "r") as fp:
+            text = fp.read().decode("utf-8", errors="ignore")
+          pack = decode_sjson_text(text)
+          if isinstance(pack, dict):
+            packs.append(pack)
+        except Exception:
+          pass
+      # CS packs
+      for name in names:
+        nl = name.replace("\\", "/")
+        ln = nl.lower()
+        if not ln.endswith(".materials.cs"):
+          continue
+        try:
+          with zf.open(name, "r") as fp:
+            text = fp.read().decode("utf-8", errors="ignore")
+          objs = ts_parser.parse_torque_file(text)
+        except Exception:
+          continue
+        pack = {}
+        for o in objs:
+          if not isinstance(o, dict): continue
+          cls = o.get('class')
+          if cls not in ('Material', 'TerrainMaterial', 'CustomMaterial'):
+            continue
+          key = o.get('name') or o.get('internalName') or o.get('mapTo') or f"{cls}"
+          if cls == 'TerrainMaterial':
+            e = {'class': 'TerrainMaterial'}
+            for k in ('internalName', 'name'):
+              if k in o: e[k] = o[k]
+            for k_src, k_dst in (
+              ('baseTex', 'baseColorBaseTex'),
+              ('detailMap', 'baseColorDetailTex'),
+              ('macroMap', 'baseColorMacroTex'),
+              ('normalMap', 'normalBaseTex'),
+              ('roughnessMap', 'roughnessBaseTex'),
+              ('aoMap', 'aoBaseTex'),
+              ('heightBaseTex', 'heightBaseTex'),
+            ):
+              if k_src in o and isinstance(o[k_src], str): e[k_dst] = o[k_src]
+            pack[key] = e
+          else:
+            e = {'class': 'Material', 'version': 1.5}
+            if 'mapTo' in o: e['mapTo'] = o['mapTo']
+            stage = {}
+            for k_src, k_dst in (
+              ('diffuseMap', 'baseColorMap'),
+              ('colorMap', 'baseColorMap'),
+              ('baseTex', 'baseColorMap'),
+              ('normalMap', 'normalMap'),
+              ('roughnessMap', 'roughnessMap'),
+              ('metallicMap', 'metallicMap'),
+              ('aoMap', 'ambientOcclusionMap'),
+              ('opacityMap', 'opacityMap'),
+              ('emissiveMap', 'emissiveMap'),
+              ('detailMap', 'baseColorDetailMap'),
+              ('normalDetailMap', 'normalDetailMap'),
+            ):
+              if k_src in o and isinstance(o[k_src], str):
+                stage[k_dst] = o[k_src]
+            if 'diffuseColor' in o and isinstance(o['diffuseColor'], list) and len(o['diffuseColor']) >= 3:
+              c = o['diffuseColor']
+              stage['baseColorFactor'] = [float(c[0]), float(c[1]), float(c[2]), float(c[3]) if len(c) >= 4 else 1.0]
+            for k_src, k_dst in (('metallic','metallicFactor'), ('roughness','roughnessFactor'), ('opacity','opacityFactor')):
+              if k_src in o:
+                try: stage[k_dst] = float(o[k_src])
+                except Exception: pass
+            e['Stages'] = [stage]
+            if 'alphaTest' in o: e['alphaTest'] = bool(o['alphaTest'])
+            if 'alphaRef'  in o:
+              try: e['alphaRef'] = int(o['alphaRef'])
+              except Exception: pass
+            if 'doubleSided' in o: e['doubleSided'] = bool(o['doubleSided'])
+            pack[key] = e
+        if pack:
+          packs.append(pack)
+  except Exception:
+    pass
+  return packs
+
 def load_forest_item_db(level_path: Path) -> dict:
   """
   Link-aware: *.json[.link] and *.cs[.link] in art/forest
@@ -304,7 +397,6 @@ def load_forest_item_db(level_path: Path) -> dict:
   managed_dir = (level_path / 'art' / 'forest').resolve()
   if not managed_dir.exists():
     return result
-  # JSON packs (may be link)
   for file in managed_dir.glob('*.json*'):
     fp = file
     if fp.suffix.lower() == '.link':
@@ -317,7 +409,6 @@ def load_forest_item_db(level_path: Path) -> dict:
         return data
     except Exception:
       pass
-  # CS packs (may be link)
   for file in managed_dir.glob('*.cs*'):
     fp = file
     if fp.suffix.lower() == '.link':
