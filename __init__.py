@@ -30,7 +30,6 @@ from . import materials_loader
 
 # Add-on preferences so user can set defaults that populate the UI
 class BeamNGLevelImporterPreferences(bpy.types.AddonPreferences):
-  # Must match the add-on module name (root package)
   bl_idname = __name__
 
   default_game_install: StringProperty(
@@ -51,14 +50,12 @@ class BeamNGLevelImporterPreferences(bpy.types.AddonPreferences):
     layout.prop(self, "default_game_install")
     layout.prop(self, "default_user_folder")
 
-
 def _get_prefs():
   try:
     addon = bpy.context.preferences.addons.get(__name__)
     return addon and addon.preferences or None
   except Exception:
     return None
-
 
 def _apply_defaults_to_scene(scene: bpy.types.Scene):
   try:
@@ -73,20 +70,19 @@ def _apply_defaults_to_scene(scene: bpy.types.Scene):
   except Exception:
     pass
 
-
 def _apply_defaults_to_all_scenes():
   for scn in bpy.data.scenes:
     _apply_defaults_to_scene(scn)
-
 
 @persistent
 def _beamng_apply_defaults_on_load(_dummy):
   _apply_defaults_to_all_scenes()
 
-
 classes = (
   BeamNGLevelImporterPreferences,
+  props_mod.LevelEntry,
   props_mod.BeamNGLevelImporterproperties,
+  ui.BEAMNG_UL_Levels,
   ui.BeamNGLevelImporterUI,
   ops_scan.BEAMNG_OT_ScanLevels,
   importer.BeamNGLevelImporterLoader,

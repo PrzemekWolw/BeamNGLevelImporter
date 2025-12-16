@@ -11,7 +11,7 @@ from bpy.types import Operator
 from pathlib import Path
 
 from .core.level_scan import (
-  scan_levels, remember_scan,
+  scan_levels, remember_scan, last_scan,
   scan_assets, remember_assets,
   scan_file_index, remember_file_index,
 )
@@ -37,6 +37,28 @@ def _apply_defaults_if_empty(props):
   except Exception:
     pass
 
+def _rebuild_level_list(props):
+  props.levels.clear()
+  data = last_scan() or {}
+  items = sorted(
+    data.items(),
+    key=lambda kv: ((kv[1].title or "").lower(), kv[0].lower())
+  )
+  for lvl, info in items:
+    it = props.levels.add()
+    it.name = lvl
+    it.title = info.title or lvl
+    kinds = {p.kind for p in (info.providers or [])}
+    if any(k.startswith("dir-unpacked") for k in kinds):
+      it.origin = "mod"
+    elif kinds and all(k.startswith("zip") for k in kinds):
+      it.origin = "zip"
+    else:
+      it.origin = "mixed"
+  if len(props.levels) == 0:
+    props.levels_index = 0
+  else:
+    props.levels_index = min(props.levels_index, len(props.levels) - 1)
 
 class BEAMNG_OT_ScanLevels(Operator):
   bl_idname = "beamng.scan_levels"
@@ -79,6 +101,9 @@ class BEAMNG_OT_ScanLevels(Operator):
     except Exception as e:
       self.report({'ERROR'}, f"Index files failed: {e}")
       return {'CANCELLED'}
+
+    # Populate the list
+    _rebuild_level_list(props)
 
     lvl_count = len(lvl_result)
     art_count = len(assets_idx.art or [])

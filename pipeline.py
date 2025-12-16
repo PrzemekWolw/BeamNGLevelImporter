@@ -41,33 +41,36 @@ def import_level(scene, props, operator=None):
   level_path: Path | None = None
 
   # Preferred: scanner/overlay
-  if getattr(props, "use_scanner", False) and getattr(props, "selected_level", ""):
-    from .core.level_scan import last_scan, level_name_from_id
-    selected_id = props.selected_level
-    scan_data = last_scan()
-    selected = level_name_from_id(selected_id) or selected_id
-    lvl_info = scan_data.get(selected)
-    if not lvl_info:
-      raise RuntimeError("Selected level is not available. Please run Scan Levels again.")
+  if getattr(props, "use_scanner", False):
+    selected_name = None
+    if getattr(props, "levels", None) and 0 <= props.levels_index < len(props.levels):
+      selected_name = props.levels[props.levels_index].name
+    elif getattr(props, "selected_level", ""):
+      selected_name = props.selected_level
 
-    # Clean overlay and build
-    overlay_root = (temp_path / f"beamng_level_overlay_{selected}").resolve()
-    try:
-      import shutil
-      if overlay_root.exists():
-        shutil.rmtree(overlay_root)
-    except Exception:
-      pass
+    if selected_name:
+      scan_data = last_scan()
+      lvl_info = scan_data.get(selected_name)
+      if not lvl_info:
+        raise RuntimeError("Selected level is not available. Please run Scan Levels again.")
 
-    providers = list(lvl_info.providers or [])
-    if not getattr(props, "overlay_patches", True) and providers:
-      providers = [providers[0]]
+      overlay_root = (temp_path / f"beamng_level_overlay_{selected_name}").resolve()
+      try:
+        import shutil
+        if overlay_root.exists():
+          shutil.rmtree(overlay_root)
+      except Exception:
+        pass
 
-    level_dir = build_overlay_for_level(lvl_info.name, overlay_root, providers)
-    level_path = level_dir
-    props.levelpath = str(level_dir)
+      providers = list(lvl_info.providers or [])
+      if not getattr(props, "overlay_patches", True) and providers:
+        providers = [providers[0]]
 
-  else:
+      level_dir = build_overlay_for_level(lvl_info.name, overlay_root, providers)
+      level_path = level_dir
+      props.levelpath = str(level_dir)
+
+  if not level_path:
     # Manual/zip fallback
     level_path = Path(props.levelpath).resolve() if props.levelpath else None
 

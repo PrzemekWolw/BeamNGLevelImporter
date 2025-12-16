@@ -22,6 +22,9 @@
 # - handle all classes in level even if we dont support them
 # - procedural meshes, trackbuilder, etc
 # - import saved scene from game with vehicles
+# - load common art folder materials
+# - try to parrallelize some tasks for better performance
+# - check what we can optimize more
 
 import bpy
 import traceback

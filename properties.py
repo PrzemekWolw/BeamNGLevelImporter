@@ -4,20 +4,21 @@
 # see LICENSE for the full license text
 #
 # ##### END LICENSE BLOCK #####
+from __future__ import annotations
 import bpy
+from bpy.props import (
+  StringProperty, BoolProperty, CollectionProperty, IntProperty, EnumProperty,
+)
 
 def _levels_enum_cb(self, context):
   try:
-    from .core.level_scan import last_scan, level_id_for
+    from .core.level_scan import last_scan
     data = last_scan() or {}
     items = []
     for idx, (lvl, info) in enumerate(sorted(
         data.items(),
         key=lambda kv: ((kv[1].title or "").lower(), kv[0].lower()))):
-      lid = level_id_for(lvl)  # ASCII-safe identifier
-      label = f"{info.title} ({lvl})" if getattr(info, "title", "") else lvl
-      desc = f"{len(info.providers)} source(s)"
-      items.append((lid, label, desc, idx))
+      items.append((lvl, f"{info.title} ({lvl})", f"{len(info.providers)} source(s)", idx))
     if items:
       return items
   except Exception:
@@ -67,56 +68,48 @@ def _set_user_folder(self, value):
   except Exception:
     pass
 
+class LevelEntry(bpy.types.PropertyGroup):
+  title: StringProperty(name="Title", default="")
+  name: StringProperty(name="Name", default="")
+  origin: StringProperty(name="Origin", default="")
 
 class BeamNGLevelImporterproperties(bpy.types.PropertyGroup):
-  enable_zip: bpy.props.BoolProperty(
-    name="Use ZIP Level",
-    default=False,
-    description="Import directly from a ZIP instead of a folder"
-  )
-  levelpath: bpy.props.StringProperty(
-    name="",
-    description="Choose a level directory",
-    subtype='DIR_PATH',
-    default=""
-  )
-  zippath: bpy.props.StringProperty(
-    name="",
-    description="Choose a level zip",
-    default="*.zip",
-    subtype='FILE_PATH'
-  )
+  enable_zip: BoolProperty(name="Use ZIP Level", default=False)
+  levelpath: StringProperty(name="", description="Choose a level directory", subtype='DIR_PATH', default="")
+  zippath: StringProperty(name="", description="Choose a level zip", default="*.zip", subtype='FILE_PATH')
 
   # Scanner / overlay props
-  use_scanner: bpy.props.BoolProperty(
+  use_scanner: BoolProperty(
     name="Use Level Scanner",
     default=True,
     description="Scan game and user folders for levels and build virtual overlay"
   )
-
   # Dynamic-default fields (show Add-on Preferences defaults if scene value empty)
-  game_install: bpy.props.StringProperty(
+  game_install: StringProperty(
     name="Game Install",
     subtype='DIR_PATH',
     description="BeamNG game root (contains 'levels', 'art', or zips)",
     get=_get_game_install,
     set=_set_game_install
   )
-  user_folder: bpy.props.StringProperty(
+  user_folder: StringProperty(
     name="User Folder",
     subtype='DIR_PATH',
-    description="BeamNG user folder root (contains 'current/mods' and 'current/mods/unpacked')",
+    description="BeamNG user folder (contains 'current/mods' and 'current/mods/unpacked')",
     get=_get_user_folder,
     set=_set_user_folder
   )
 
-  overlay_patches: bpy.props.BoolProperty(
+  overlay_patches: BoolProperty(
     name="Merge Patches",
     default=True,
     description="Merge unpacked/zips (mods override game) into a temporary overlay"
   )
 
-  selected_level: bpy.props.EnumProperty(
+  selected_level: EnumProperty(
     name="Found Levels",
     items=_levels_enum_cb
   )
+
+  levels: CollectionProperty(type=LevelEntry)
+  levels_index: IntProperty(name="Level Index", default=0, min=0)
