@@ -26,6 +26,7 @@ from . import ui
 from . import importer
 from . import properties as props_mod
 from . import ops_scan
+from . import materials_loader
 
 # Add-on preferences so user can set defaults that populate the UI
 class BeamNGLevelImporterPreferences(bpy.types.AddonPreferences):
@@ -99,12 +100,17 @@ def register():
     bpy.types.Scene.BeamNGLevelImporter = bpy.props.PointerProperty(
       type=props_mod.BeamNGLevelImporterproperties
     )
+  materials_loader.register_materials_loader()
   _apply_defaults_to_all_scenes()
   if _beamng_apply_defaults_on_load not in bpy.app.handlers.load_post:
     bpy.app.handlers.load_post.append(_beamng_apply_defaults_on_load)
 
 def unregister():
   from bpy.utils import unregister_class
+  try:
+    materials_loader.unregister_materials_loader()
+  except Exception:
+    pass
   try:
     if _beamng_apply_defaults_on_load in bpy.app.handlers.load_post:
       bpy.app.handlers.load_post.remove(_beamng_apply_defaults_on_load)
