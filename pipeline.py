@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .core.types import ImportConfig, ImportContext
 from .core.progress import ProgressHelper, force_redraw
-from .core.paths import extract_zip_level_root, resolve_beamng_path
+from .core.paths import extract_zip_level_root, resolve_beamng_path, resolve_any_beamng_path
 from .core.import_sources import (
   load_main_records, load_forest_records, load_decal_sets, load_terrain_meta,
   scan_material_json_packs, scan_material_cs_packs, load_forest_item_db
@@ -42,8 +42,10 @@ def import_level(scene, props, operator=None):
 
   # Preferred: scanner/overlay
   if getattr(props, "use_scanner", False) and getattr(props, "selected_level", ""):
-    selected = props.selected_level
+    from .core.level_scan import last_scan, level_name_from_id
+    selected_id = props.selected_level
     scan_data = last_scan()
+    selected = level_name_from_id(selected_id) or selected_id
     lvl_info = scan_data.get(selected)
     if not lvl_info:
       raise RuntimeError("Selected level is not available. Please run Scan Levels again.")
@@ -61,7 +63,6 @@ def import_level(scene, props, operator=None):
     if not getattr(props, "overlay_patches", True) and providers:
       providers = [providers[0]]
 
-    # Build overlay into overlay_root/levels/<name> and use that as level root
     level_dir = build_overlay_for_level(lvl_info.name, overlay_root, providers)
     level_path = level_dir
     props.levelpath = str(level_dir)
@@ -114,10 +115,11 @@ def import_level(scene, props, operator=None):
     prefab_fn = rec.get('filename')
     if not prefab_fn:
       continue
-    prefab_path = resolve_beamng_path(prefab_fn, level_path)
-    if not prefab_path.exists():
-      info(f"Prefab file not found: {prefab_fn} -> {prefab_path}")
+    prefab_real = resolve_any_beamng_path(prefab_fn, level_path) or resolve_beamng_path(prefab_fn, level_path)
+    if not prefab_real or not Path(prefab_real).exists():
+      info(f"Prefab file not found: {prefab_fn} -> {prefab_real}")
       continue
+    prefab_path = Path(prefab_real)
 
     prefab_name = rec.get('name') or rec.get('internalName') or prefab_path.stem
     prefab_parent = rec.get('__parent') or 'MissionGroup'
@@ -196,7 +198,6 @@ def import_level(scene, props, operator=None):
     if name:
       forest_names[name] = os.path.split(shape)[1] if shape else name
 
-  # Build context/config
   cfg = ImportConfig(
     level_path=level_path,
     enable_zip=bool(getattr(props, "enable_zip", False)),
@@ -284,11 +285,9 @@ def import_level(scene, props, operator=None):
 
     for i in ctx.level_data:
       if i.get('class') == 'SimGroup':
-        name = i.get('name')
-        parent = i.get('__parent')
+        name = i.get('name'); parent = i.get('__parent')
         if name and parent:
-          c = bpy.data.collections.get(name)
-          p = bpy.data.collections.get(parent)
+          c = bpy.data.collections.get(name); p = bpy.data.collections.get(parent)
           if c and p and c.name not in [ch.name for ch in p.children]:
             p.children.link(c)
 

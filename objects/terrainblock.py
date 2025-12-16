@@ -9,7 +9,7 @@ import bpy
 import os
 import struct
 from pathlib import Path
-from ..core.paths import resolve_beamng_path, exists_insensitive, get_real_case_path
+from ..core.paths import resolve_any_beamng_path
 
 try:
   import numpy as np
@@ -338,8 +338,8 @@ def build_terrain_object(name, size, heights, layer, square_size, height_scale, 
 def resolve_ter_path(level_root: Path, terrain_file: str | None) -> Path | None:
   if not terrain_file:
     return None
-  p = resolve_beamng_path(terrain_file, level_root, None)
-  return get_real_case_path(p) if p and exists_insensitive(p) else None
+  p = resolve_any_beamng_path(terrain_file, level_root)
+  return p if p and p.exists() else None
 
 def find_terrain_meta_for_ter(ctx, ter_path: Path):
   ter_name = str(ter_path).replace('\\', '/')

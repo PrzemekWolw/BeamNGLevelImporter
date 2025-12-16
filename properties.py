@@ -8,14 +8,16 @@ import bpy
 
 def _levels_enum_cb(self, context):
   try:
-    from .core.level_scan import last_scan
+    from .core.level_scan import last_scan, level_id_for
     data = last_scan() or {}
     items = []
     for idx, (lvl, info) in enumerate(sorted(
         data.items(),
         key=lambda kv: ((kv[1].title or "").lower(), kv[0].lower()))):
+      lid = level_id_for(lvl)  # ASCII-safe identifier
       label = f"{info.title} ({lvl})" if getattr(info, "title", "") else lvl
-      items.append((lvl, label, f"{len(info.providers)} source(s)", idx))
+      desc = f"{len(info.providers)} source(s)"
+      items.append((lid, label, desc, idx))
     if items:
       return items
   except Exception:

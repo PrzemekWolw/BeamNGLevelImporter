@@ -11,6 +11,8 @@ import os
 import re
 import shutil
 import zipfile
+import hashlib
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -31,6 +33,10 @@ _ASSETS_KEY: Tuple[Optional[str], Optional[str]] = (None, None)
 # Cache for last file index scan
 _LAST_FILE_INDEX: Optional["FileIndex"] = None
 _FILE_INDEX_KEY: Tuple[Optional[str], Optional[str]] = (None, None)
+
+# Level ID mapping (ASCII-safe identifiers for Blender EnumProperty)
+_LEVEL_TO_ID: dict[str, str] = {}
+_ID_TO_LEVEL: dict[str, str] = {}
 
 
 # --------------------------
@@ -86,6 +92,50 @@ class FileIndex:
   zip_count: int = 0
   dir_count: int = 0
 
+def _decode_text_best(data: bytes) -> str:
+  """
+  Try common encodings (BOM-aware UTF-8 first, then UTF-8 strict, then Windows/Latin fallbacks).
+  Returns a proper str; last resort returns UTF-8 with ignore.
+  """
+  for enc in ('utf-8-sig', 'utf-8', 'cp1250', 'cp1252', 'iso-8859-2', 'latin-1'):
+    try:
+      return data.decode(enc)
+    except Exception:
+      continue
+  return data.decode('utf-8', errors='ignore')
+
+def _normalize_title(s: str) -> str:
+  try:
+    return unicodedata.normalize('NFC', s).strip()
+  except Exception:
+    return (s or '').strip()
+
+
+def _make_level_id(level_name: str) -> str:
+  # short, ASCII, stable id
+  h = hashlib.sha1(level_name.encode('utf-8', errors='ignore')).hexdigest()[:16]
+  return f"lvl_{h}"
+
+def _rebuild_level_id_maps(levels: dict[str, 'LevelInfo']):
+  _LEVEL_TO_ID.clear()
+  _ID_TO_LEVEL.clear()
+  for lvl in levels.keys():
+    lid = _make_level_id(lvl)
+    if lid in _ID_TO_LEVEL and _ID_TO_LEVEL[lid] != lvl:
+      for extra in range(1, 1000):
+        lid2 = f"{lid}_{extra}"
+        if lid2 not in _ID_TO_LEVEL:
+          lid = lid2
+          break
+    _LEVEL_TO_ID[lvl] = lid
+    _ID_TO_LEVEL[lid] = lvl
+
+def level_id_for(name: str) -> str:
+  return _LEVEL_TO_ID.get(name) or _make_level_id(name)
+
+def level_name_from_id(id_str: str) -> str | None:
+  return _ID_TO_LEVEL.get(id_str)
+
 
 # --------------------------
 # Case-insensitive FS helpers
@@ -132,12 +182,13 @@ def _read_info_title_from_dir(level_dir: Path) -> Optional[str]:
   if not p or not p.exists():
     return None
   try:
-    with open(p, "r", encoding="utf-8", errors="ignore") as f:
-      data = decode_sjson_text(f.read())
+    with open(p, "rb") as f:
+      text = _decode_text_best(f.read())
+    data = decode_sjson_text(text)
     if isinstance(data, dict):
-      title = data.get("title") or data.get("name") or ""
-      if isinstance(title, str) and title.strip():
-        return title.strip()
+      raw = data.get("title") or data.get("name") or ""
+      if isinstance(raw, str) and raw.strip():
+        return _normalize_title(raw)
   except Exception:
     pass
   return None
@@ -146,12 +197,13 @@ def _read_info_title_from_dir(level_dir: Path) -> Optional[str]:
 def _read_info_title_from_zip(zf: zipfile.ZipFile, info_member: str) -> Optional[str]:
   try:
     with zf.open(info_member, "r") as fp:
-      text = fp.read().decode("utf-8", errors="ignore")
-      data = decode_sjson_text(text)
+      data_bytes = fp.read()
+    text = _decode_text_best(data_bytes)
+    data = decode_sjson_text(text)
     if isinstance(data, dict):
-      title = data.get("title") or data.get("name") or ""
-      if isinstance(title, str) and title.strip():
-        return title.strip()
+      raw = data.get("title") or data.get("name") or ""
+      if isinstance(raw, str) and raw.strip():
+        return _normalize_title(raw)
   except Exception:
     pass
   return None
@@ -308,6 +360,7 @@ def remember_scan(game_install: Optional[Path], user_folder: Optional[Path], res
   _LAST_SCAN.clear()
   _LAST_SCAN.update(result)
   _SCAN_KEY = (str(game_install) if game_install else None, str(user_folder) if user_folder else None)
+  _rebuild_level_id_maps(_LAST_SCAN)
 
 
 def last_scan() -> Dict[str, LevelInfo]:

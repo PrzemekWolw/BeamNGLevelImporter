@@ -19,7 +19,6 @@
 # - export support
 # - integrate DTS importer
 # - hide base position objects in different scene
-# - asset link support
 # - handle all classes in level even if we dont support them
 # - procedural meshes, trackbuilder, etc
 # - import saved scene from game with vehicles
