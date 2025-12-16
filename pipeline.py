@@ -25,9 +25,11 @@ from .materials.terrain_v0 import build_terrain_material_v0
 from .shapes.collada import import_collada_shapes
 from .objects.mission import build_mission_objects
 from .objects.forest import build_forest_objects
+from .objects.decals import build_decal_objects
 from .utils.bpy_helpers import ensure_collection, delete_object_if_exists, dedupe_materials
 from .core import ts_parser
 from .core.sjson import read_json_records
+from .core.level_scan import last_scan, build_overlay_for_level
 
 def _info(op, msg):
   if op: op.report({'INFO'}, msg)
@@ -36,14 +38,44 @@ def _info(op, msg):
 def import_level(scene, props, operator=None):
   def info(msg): _info(operator, msg)
   temp_path = Path(bpy.app.tempdir or ".").resolve()
-  level_path = Path(props.levelpath).resolve() if props.levelpath else None
+  level_path: Path | None = None
 
-  if props.enable_zip and props.zippath:
-    root = extract_zip_level_root(Path(props.zippath), temp_path)
-    if not root or not root.exists():
-      raise RuntimeError("Failed to extract level from zip")
-    level_path = root
-    props.levelpath = str(root)
+  # Preferred: scanner/overlay
+  if getattr(props, "use_scanner", False) and getattr(props, "selected_level", ""):
+    selected = props.selected_level
+    scan_data = last_scan()
+    lvl_info = scan_data.get(selected)
+    if not lvl_info:
+      raise RuntimeError("Selected level is not available. Please run Scan Levels again.")
+
+    # Clean overlay and build
+    overlay_root = (temp_path / f"beamng_level_overlay_{selected}").resolve()
+    try:
+      import shutil
+      if overlay_root.exists():
+        shutil.rmtree(overlay_root)
+    except Exception:
+      pass
+
+    providers = list(lvl_info.providers or [])
+    if not getattr(props, "overlay_patches", True) and providers:
+      providers = [providers[0]]
+
+    # Build overlay into overlay_root/levels/<name> and use that as level root
+    level_dir = build_overlay_for_level(lvl_info.name, overlay_root, providers)
+    level_path = level_dir
+    props.levelpath = str(level_dir)
+
+  else:
+    # Manual/zip fallback
+    level_path = Path(props.levelpath).resolve() if props.levelpath else None
+
+    if getattr(props, "enable_zip", False) and getattr(props, "zippath", ""):
+      root = extract_zip_level_root(Path(props.zippath), temp_path)
+      if not root or not root.exists():
+        raise RuntimeError("Failed to extract level from zip")
+      level_path = root
+      props.levelpath = str(root)
 
   if not level_path or not level_path.exists():
     raise RuntimeError("Level path not set or not found")
@@ -59,24 +91,29 @@ def import_level(scene, props, operator=None):
   decals_defs, decal_instances = load_decal_sets(level_path)
 
   def _offset_nodes(nodes, dpos):
-    if not isinstance(nodes, list): return nodes
-    out=[]
+    if not isinstance(nodes, list):
+      return nodes
+    out = []
     for n in nodes:
       if isinstance(n, dict):
         nn = dict(n)
         p = nn.get('point') or nn.get('position') or nn.get('pos')
         if isinstance(p, (list, tuple)) and len(p) == 3:
-          nn['point'] = [p[0]+dpos[0], p[1]+dpos[1], p[2]+dpos[2]]
+          nn['point'] = [p[0] + dpos[0], p[1] + dpos[1], p[2] + dpos[2]]
         out.append(nn)
       else:
         out.append(n)
     return out
 
-  prefabs_expanded=[]; prefab_roots=[]; to_remove=[]
+  prefabs_expanded = []
+  prefab_roots = []
+  to_remove = []
   for rec in list(level_data):
-    if not isinstance(rec, dict) or rec.get('class') != 'Prefab': continue
+    if not isinstance(rec, dict) or rec.get('class') != 'Prefab':
+      continue
     prefab_fn = rec.get('filename')
-    if not prefab_fn: continue
+    if not prefab_fn:
+      continue
     prefab_path = resolve_beamng_path(prefab_fn, level_path)
     if not prefab_path.exists():
       info(f"Prefab file not found: {prefab_fn} -> {prefab_path}")
@@ -84,37 +121,41 @@ def import_level(scene, props, operator=None):
 
     prefab_name = rec.get('name') or rec.get('internalName') or prefab_path.stem
     prefab_parent = rec.get('__parent') or 'MissionGroup'
-    prefab_pos = rec.get('position') or [0,0,0]
-    if not isinstance(prefab_pos, (list, tuple)) or len(prefab_pos) != 3: prefab_pos=[0,0,0]
-    prefab_roots.append({'class':'SimGroup','name':prefab_name,'__parent':prefab_parent})
-    prefab_records=[]
-    try: prefab_records = read_json_records(prefab_path)
-    except Exception: prefab_records=[]
+    prefab_pos = rec.get('position') or [0, 0, 0]
+    if not isinstance(prefab_pos, (list, tuple)) or len(prefab_pos) != 3:
+      prefab_pos = [0, 0, 0]
+    prefab_roots.append({'class': 'SimGroup', 'name': prefab_name, '__parent': prefab_parent})
+    prefab_records = []
+    try:
+      prefab_records = read_json_records(prefab_path)
+    except Exception:
+      prefab_records = []
     if not prefab_records:
       try:
         txt = prefab_path.read_text(encoding='utf-8', errors='ignore')
         prefab_records = ts_parser.parse_torque_file(txt)
       except Exception:
-        prefab_records=[]
-    group_name_map={}
+        prefab_records = []
+    group_name_map = {}
     for r in prefab_records:
-      if isinstance(r, dict) and r.get('class')=='SimGroup':
+      if isinstance(r, dict) and r.get('class') == 'SimGroup':
         old = r.get('name') or 'Group'
         group_name_map[old] = f"{prefab_name}_{old}"
 
     for r in prefab_records:
-      if not isinstance(r, dict): continue
+      if not isinstance(r, dict):
+        continue
       r2 = dict(r)
       cls = r2.get('class')
 
       pos = r2.get('position')
-      if isinstance(pos, (list, tuple)) and len(pos)==3:
-        r2['position'] = [pos[0]+prefab_pos[0], pos[1]+prefab_pos[1], pos[2]+prefab_pos[2]]
+      if isinstance(pos, (list, tuple)) and len(pos) == 3:
+        r2['position'] = [pos[0] + prefab_pos[0], pos[1] + prefab_pos[1], pos[2] + prefab_pos[2]]
       if 'nodes' in r2:
         r2['nodes'] = _offset_nodes(r2.get('nodes'), prefab_pos)
 
       parent = r2.get('__parent')
-      if cls=='SimGroup':
+      if cls == 'SimGroup':
         oldname = r2.get('name') or 'Group'
         r2['name'] = group_name_map.get(oldname, f"{prefab_name}_{oldname}")
         r2['__parent'] = group_name_map.get(parent, prefab_name)
@@ -126,31 +167,40 @@ def import_level(scene, props, operator=None):
     level_data.extend(prefab_roots)
     level_data.extend(prefabs_expanded)
     for r in to_remove:
-      try: level_data.remove(r)
-      except ValueError: pass
+      try:
+        level_data.remove(r)
+      except ValueError:
+        pass
 
+  # Normalize
   normalize_records(level_data)
   normalize_forest(forest_data)
 
+  # Ensure collections for SimGroups
   for i in level_data:
-    if i.get('class')=='SimGroup':
+    if i.get('class') == 'SimGroup':
       ensure_collection(i.get('name') or 'SimGroup')
 
+  # Collect shape files to import
   for i in level_data:
-    if i.get('class')=='TSStatic':
+    if i.get('class') == 'TSStatic':
       shape = i.get('shapeName')
-      if shape and shape not in shapes: shapes.append(shape)
+      if shape and shape not in shapes:
+        shapes.append(shape)
+
   for key, item in (forest_items or {}).items():
     shape = (item or {}).get('shapeFile')
-    name  = (item or {}).get('name') or (item or {}).get('internalName')
-    if shape and shape not in shapes: shapes.append(shape)
+    name = (item or {}).get('name') or (item or {}).get('internalName')
+    if shape and shape not in shapes:
+      shapes.append(shape)
     if name:
       forest_names[name] = os.path.split(shape)[1] if shape else name
 
+  # Build context/config
   cfg = ImportConfig(
     level_path=level_path,
-    enable_zip=bool(props.enable_zip),
-    zip_path=Path(props.zippath) if props.zippath else None
+    enable_zip=bool(getattr(props, "enable_zip", False)),
+    zip_path=Path(props.zippath) if getattr(props, "zippath", "") else None
   )
 
   ctx = ImportContext(
@@ -168,30 +218,36 @@ def import_level(scene, props, operator=None):
     decal_instances=decal_instances
   )
 
-  texture_sets={}
+  # Terrain material mode and world size
+  texture_sets = {}
   for pack in ctx.materials_packs:
     if isinstance(pack, dict):
-      for k,v in pack.items():
-        if isinstance(v, dict) and v.get('class')=='TerrainMaterialTextureSet':
+      for k, v in pack.items():
+        if isinstance(v, dict) and v.get('class') == 'TerrainMaterialTextureSet':
           ts_name = v.get('name') or k
-          if ts_name: texture_sets[ts_name]=v
-  terrain_texset_name=None
+          if ts_name:
+            texture_sets[ts_name] = v
+
+  terrain_texset_name = None
   for rec in ctx.level_data:
-    if rec.get('class')=='TerrainBlock':
+    if rec.get('class') == 'TerrainBlock':
       ts = rec.get('materialTextureSet')
       if ts and ts in texture_sets:
-        terrain_texset_name=ts; break
+        terrain_texset_name = ts
+        break
+
   use_v15_terrain = bool(terrain_texset_name)
 
-  terrain_world_size=None
+  terrain_world_size = None
   try:
-    tb = next(rec for rec in ctx.level_data if rec.get('class')=='TerrainBlock')
+    tb = next(rec for rec in ctx.level_data if rec.get('class') == 'TerrainBlock')
     sq = float(tb.get('squareSize') or 1.0)
     ter_meta = next((m for m in ctx.terrain_meta if isinstance(m, dict) and 'size' in m), None)
     ter_size = int(ter_meta.get('size')) if ter_meta else None
-    if ter_size and ter_size>1: terrain_world_size = (ter_size - 1) * sq
+    if ter_size and ter_size > 1:
+      terrain_world_size = (ter_size - 1) * sq
   except Exception:
-    terrain_world_size=None
+    terrain_world_size = None
 
   materials_count = sum(len(p) for p in ctx.materials_packs if isinstance(p, dict))
   total_steps = max(1, len(shapes)) + max(1, len(level_data)) + max(1, len(forest_data)) + max(1, materials_count) + 10
@@ -199,35 +255,40 @@ def import_level(scene, props, operator=None):
   try:
     ctx.progress.begin(total_steps, "BeamNG: preparing import...")
 
+    # Materials
     for pack in ctx.materials_packs:
-      if not isinstance(pack, dict): continue
+      if not isinstance(pack, dict):
+        continue
       for _, v in pack.items():
-        if not isinstance(v, dict): continue
-        if v.get('class')=="TerrainMaterial":
+        if not isinstance(v, dict):
+          continue
+        if v.get('class') == "TerrainMaterial":
           if use_v15_terrain:
             build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
           else:
             build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
-        elif v.get('mapTo') and v.get('version')==1.5:
-          name = v['mapTo'] if v['mapTo']!='unmapped_mat' else v.get('name')
+        elif v.get('mapTo') and v.get('version') == 1.5:
+          name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
           build_pbr_v15_material(name, v, ctx.config.level_path)
-        elif v.get('mapTo') and (v.get('version')==0 or not v.get('version')):
-          name = v['mapTo'] if v['mapTo']!='unmapped_mat' else v.get('name')
+        elif v.get('mapTo') and (v.get('version') == 0 or not v.get('version')):
+          name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
           build_pbr_v0_material(name, v, ctx.config.level_path)
         ctx.progress.update(step=1)
 
     # Shapes
     import_collada_shapes(ctx)
 
-    for d in ("Cube","Light","Lamp","Camera"):
+    for d in ("Cube", "Light", "Lamp", "Camera"):
       delete_object_if_exists(d)
     dedupe_materials()
 
     for i in ctx.level_data:
-      if i.get('class')=='SimGroup':
-        name=i.get('name'); parent=i.get('__parent')
+      if i.get('class') == 'SimGroup':
+        name = i.get('name')
+        parent = i.get('__parent')
         if name and parent:
-          c=bpy.data.collections.get(name); p=bpy.data.collections.get(parent)
+          c = bpy.data.collections.get(name)
+          p = bpy.data.collections.get(parent)
           if c and p and c.name not in [ch.name for ch in p.children]:
             p.children.link(c)
 
@@ -235,7 +296,6 @@ def import_level(scene, props, operator=None):
     build_mission_objects(ctx)
     build_forest_objects(ctx)
 
-    from .objects.decals import build_decal_objects
     build_decal_objects(ctx)
 
     force_redraw()

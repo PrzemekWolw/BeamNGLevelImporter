@@ -12,19 +12,20 @@
 # - basic 5.x support...
 #     - multiscatter instead of nishita
 #     - check other issues
-# - add support for older forest format
-# - light support, sync light energy properly
-# - zip support, rework how we handle zip
-# - particle support
 # - ts support
+#   - add support for older forest format
+# - light support, sync light energy properly
+# - particle support
 # - export support
 # - integrate DTS importer
 # - hide base position objects in different scene
 # - asset link support
 # - handle all classes in level even if we dont support them
 # - procedural meshes, trackbuilder, etc
+# - import saved scene from game with vehicles
 
 import bpy
+import traceback
 from .pipeline import import_level
 
 class BeamNGLevelImporterLoader(bpy.types.Operator):
@@ -34,9 +35,14 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
   bl_category = 'Import BeamNG Level'
 
   def execute(self, context):
+    props = getattr(context.scene, "BeamNGLevelImporter", None)
+    if props is None:
+      self.report({'ERROR'}, "Scene.BeamNGLevelImporter is missing. Re-enable the add-on.")
+      return {'CANCELLED'}
     try:
-      import_level(context.scene, context.scene.BeamNGLevelImporter, self)
+      import_level(context.scene, props, self)
       return {'FINISHED'}
     except Exception as e:
-      self.report({'ERROR'}, str(e))
+      traceback.print_exc()
+      self.report({'ERROR'}, f"{e.__class__.__name__}: {e}")
       return {'CANCELLED'}
