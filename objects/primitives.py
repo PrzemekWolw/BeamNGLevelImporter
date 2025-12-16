@@ -32,6 +32,8 @@ def make_light_fast(kind, name, loc, rot_euler, scale, energy, color, parent_col
     lamp.color = (float(color[0]), float(color[1]), float(color[2]))
   if angle is not None and kind == 'SPOT':
     lamp.spot_size = angle
+  if kind == 'SPOT':
+    lamp.spot_blend = 0.5
   obj = bpy.data.objects.new(name, lamp)
   obj.matrix_world = make_matrix(loc, rot_euler, scale or (1,1,1))
   fast_link(obj, parent_coll)
