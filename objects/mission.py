@@ -7,8 +7,9 @@
 
 import bpy
 import math
-
+import os
 from collections import defaultdict
+
 from ..core.progress import force_redraw
 from ..objects.terrainblock import import_terrain_block
 from ..objects.groundcover import build_groundcover_objects, bake_groundcover_to_mesh
@@ -22,6 +23,16 @@ from .tsstatic import build_tsstatic_instancers
 from .river import make_river_from_nodes_catmull
 from .decal_road import make_decal_road
 from .mesh_road import make_mesh_road
+
+def _shape_key(shape_name: str | None) -> str:
+  """
+  Canonical key for TSStatic shapes.
+  MUST match how shapes are named in shapes/collada.py.
+  """
+  s = (shape_name or "").replace("\\", "/").strip()
+  base = os.path.basename(s) if s else ""
+  return (base or "tsstatic").lower()
+
 
 def build_mission_objects(ctx):
   ctx.progress.update("Importing mission data...")
@@ -156,7 +167,7 @@ def build_mission_objects(ctx):
 
     elif cls == 'TSStatic':
       shapeName = i.get('shapeName')
-      inst_name = (shapeName and shapeName.split('/')[-1]) or 'TSStatic'
+      inst_name = _shape_key(shapeName)
       # Collect for instancing
       ts_groups[(inst_name, parent_coll)].append({
         'pos': pos,
