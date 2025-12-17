@@ -1,3 +1,10 @@
+# ##### BEGIN LICENSE BLOCK #####
+#
+# This program is licensed under The MIT License:
+# see LICENSE for the full license text
+#
+# ##### END LICENSE BLOCK #####
+
 import bpy
 import mathutils
 import xml.etree.ElementTree as ET
@@ -38,14 +45,14 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
 
   root_parent = mathutils.Matrix.Identity(4)
   if unit_scale != 1.0:
-    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (1,0,0))
-    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (0,1,0))
-    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (0,0,1))
+    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (1, 0, 0))
+    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (0, 1, 0))
+    root_parent = root_parent @ mathutils.Matrix.Scale(unit_scale, 4, (0, 0, 1))
   if up_axis == 'X_UP':
-    rot = mathutils.Matrix(((0,0,1,0),(1,0,0,0),(0,1,0,0),(0,0,0,1)))
+    rot = mathutils.Matrix(((0, 0, 1, 0), (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
     root_parent = rot @ root_parent
   elif up_axis == 'Y_UP':
-    rot = mathutils.Matrix(((-1,0,0,0),(0,0,1,0),(0,1,0,0),(0,0,0,1)))
+    rot = mathutils.Matrix(((-1, 0, 0, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
     root_parent = rot @ root_parent
 
   geometries_by_id = {}
@@ -74,18 +81,18 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       elif t == 'scale':
         if ignore_node_scale:
           continue
-        m = m @ mathutils.Matrix.Scale(vals[0], 4, (1,0,0))
-        m = m @ mathutils.Matrix.Scale(vals[1], 4, (0,1,0))
-        m = m @ mathutils.Matrix.Scale(vals[2], 4, (0,0,1))
+        m = m @ mathutils.Matrix.Scale(vals[0], 4, (1, 0, 0))
+        m = m @ mathutils.Matrix.Scale(vals[1], 4, (0, 1, 0))
+        m = m @ mathutils.Matrix.Scale(vals[2], 4, (0, 0, 1))
       elif t == 'rotate':
         axis = mathutils.Vector((vals[0], vals[1], vals[2]))
         ang = -vals[3] * pi / 180.0
         m = m @ mathutils.Matrix.Rotation(ang, 4, axis)
       elif t == 'matrix':
-        mx = mathutils.Matrix(((vals[0],vals[1],vals[2],vals[3]),
-                               (vals[4],vals[5],vals[6],vals[7]),
-                               (vals[8],vals[9],vals[10],vals[11]),
-                               (vals[12],vals[13],vals[14],vals[15])))
+        mx = mathutils.Matrix(((vals[0], vals[1], vals[2], vals[3]),
+                               (vals[4], vals[5], vals[6], vals[7]),
+                               (vals[8], vals[9], vals[10], vals[11]),
+                               (vals[12], vals[13], vals[14], vals[15])))
         m = m @ mx
     return m
 
@@ -107,16 +114,41 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
   def build_material_map_for_instance(inst):
     symbol_to_matname = build_instance_material_bindings(inst, root)
     matname_to_bmat = {}
-    for sym, mname in symbol_to_matname.items():
+    for _, mname in symbol_to_matname.items():
       bmat = bpy.data.materials.get(mname)
       if bmat is None:
         bmat = ensure_empty_material(mname)
       matname_to_bmat[mname] = bmat
     return symbol_to_matname, matname_to_bmat
 
+  def resolve_material_name_loose(sym):
+    if not sym:
+      return None
+
+    for mm in root.findall('.//{*}material'):
+      mid = (mm.get('id') or '')
+      mname = (mm.get('name') or '')
+      if mid == sym or mname == sym:
+        return mname or mid or sym
+
+    sym_l = sym.lower()
+    candidates = [sym]
+    for suf in ("-material-material", "-material"):
+      if sym_l.endswith(suf):
+        candidates.append(sym[:-len(suf)])
+
+    for cand in candidates:
+      for mm in root.findall('.//{*}material'):
+        mid = (mm.get('id') or '')
+        mname = (mm.get('name') or '')
+        if mid == cand or mname == cand:
+          return mname or mid or cand
+
+    return None
+
   def build_geometry_for_mesh(mesh, inst_like, world, invert_geom):
     mesh_index = build_mesh_index(mesh)
-    prims = [p for p in mesh if U.tag_name(p) in ('triangles','tristrips','trifans','polylist','polygons')]
+    prims = [p for p in mesh if U.tag_name(p) in ('triangles', 'tristrips', 'trifans', 'polylist', 'polygons')]
     if not prims:
       return None, None, False
 
@@ -146,11 +178,17 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       buckets, offsets, max_off = classify_inputs(inputs)
       stride = max_off + 1
 
-      sr_pos = read_source_reader_from_input(mesh, buckets['POSITION'], [['X','Y','Z']], 'POSITION')
-      sr_nor = read_source_reader_from_input(mesh, buckets['NORMAL'], [['X','Y','Z']], 'NORMAL')
-      sr_col = read_source_reader_from_input(mesh, buckets['COLOR'], [['R','G','B','A']], 'COLOR')
-      sr_uv0 = read_source_reader_from_input(mesh, buckets['TEXCOORD_0'], [['S','T'],['U','V'],['X','Y']], 'TEXCOORD')
-      sr_uv1 = read_source_reader_from_input(mesh, buckets['TEXCOORD_1'], [['S','T'],['U','V'],['X','Y']], 'TEXCOORD')
+      sr_pos = read_source_reader_from_input(mesh, buckets['POSITION'], [['X', 'Y', 'Z']], 'POSITION')
+      sr_nor = read_source_reader_from_input(mesh, buckets['NORMAL'], [['X', 'Y', 'Z']], 'NORMAL')
+
+      sr_col = read_source_reader_from_input(
+        mesh, buckets['COLOR'],
+        [['R', 'G', 'B', 'A'], ['R', 'G', 'B'], ['X', 'Y', 'Z']],
+        'COLOR'
+      )
+
+      sr_uv0 = read_source_reader_from_input(mesh, buckets['TEXCOORD_0'], [['S', 'T'], ['U', 'V'], ['X', 'Y']], 'TEXCOORD')
+      sr_uv1 = read_source_reader_from_input(mesh, buckets['TEXCOORD_1'], [['S', 'T'], ['U', 'V'], ['X', 'Y']], 'TEXCOORD')
 
       tri_rows = triangles_from_primitive_np(prim, stride)
       if tri_rows.size == 0:
@@ -187,11 +225,15 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       if u1i is not None and (uv1_arr.size == 0 or not max_index_ok(u1i, uv1_arr.size, uv1_stride, sr_uv1.accessor_offset if sr_uv1 else 0)):
         u1i = None
 
+      col_stride = sr_col.stride() if sr_col else 0
+      if ci is not None and (col_arr.size == 0 or not max_index_ok(ci, col_arr.size, col_stride, sr_col.accessor_offset if sr_col else 0)):
+        ci = None
+
       this_src_id = sr_pos.source.get('id') if (sr_pos and sr_pos.source is not None) else id(sr_pos)
       if pos_src_id is None:
         pos_src_id = this_src_id
         sr_pos_common = sr_pos
-        pos_offsets = sr_pos.offsets or [0,1,2]
+        pos_offsets = sr_pos.offsets or [0, 1, 2]
         pos_stride_common = pos_stride
       elif pos_src_id != this_src_id:
         mixed_position_sources = True
@@ -200,10 +242,9 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       prim_face_spans.append((total_loops // 3, this_faces, prim.get('material') or ''))
 
       pi_list_original.append(pi.astype(np.int64, copy=False))
-
       pi_list.append(pi.astype(np.int64, copy=False))
       prim_pos_srs.append(sr_pos)
-      prim_pos_offsets.append(sr_pos.offsets or [0,1,2])
+      prim_pos_offsets.append(sr_pos.offsets or [0, 1, 2])
       prim_pos_strides.append(pos_stride)
       total_loops += pi.shape[0]
 
@@ -217,34 +258,33 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
 
       loop_n = None
       if ni is not None and nor_arr.size > 0 and sr_nor:
-        no = sr_nor.offsets or [0,1,2]
-        loop_n = gather3(nor_arr, ni, nor_stride, U.comp(no,0,0), U.comp(no,1,1), U.comp(no,2,2), sr_nor.accessor_offset)
+        no = sr_nor.offsets or [0, 1, 2]
+        loop_n = gather3(nor_arr, ni, nor_stride, U.comp(no, 0, 0), U.comp(no, 1, 1), U.comp(no, 2, 2), sr_nor.accessor_offset)
         norms = np.linalg.norm(loop_n, axis=1, keepdims=True)
         norms[norms < 1e-8] = 1.0
         loop_n = loop_n / norms
 
       loop_c = None
       if ci is not None and col_arr.size and sr_col:
-        col_stride = sr_col.stride()
-        co = sr_col.offsets or [0,1,2,3]
+        co = sr_col.offsets or [0, 1, 2]
         base = sr_col.accessor_offset + (ci.astype(np.int64, copy=False) * col_stride)
-        cr = col_arr[base + U.comp(co,0,0)]
-        cg = col_arr[base + U.comp(co,1,1)]
-        cb = col_arr[base + U.comp(co,2,2)]
-        ca = col_arr[base + U.comp(co,3,3)] if col_stride > 3 else np.ones_like(cr, dtype=np.float32)
+        cr = col_arr[base + U.comp(co, 0, 0)]
+        cg = col_arr[base + U.comp(co, 1, 1)]
+        cb = col_arr[base + U.comp(co, 2, 2)]
+        ca = np.ones_like(cr, dtype=np.float32)
+        if col_stride >= 4 and (sr_col.offsets is not None) and len(sr_col.offsets) >= 4 and sr_col.offsets[3] is not None:
+          ca = col_arr[base + int(sr_col.offsets[3])]
         loop_c = np.stack([cr, cg, cb, ca], axis=1).astype(np.float32, copy=False)
 
       loop_u0 = None
       if u0i is not None and uv0_arr.size and sr_uv0:
-        uo = sr_uv0.offsets or [0,1]
-        uv = gather2(uv0_arr, u0i, uv0_stride, U.comp(uo,0,0), U.comp(uo,1,1), sr_uv0.accessor_offset)
-        loop_u0 = uv
+        uo = sr_uv0.offsets or [0, 1]
+        loop_u0 = gather2(uv0_arr, u0i, uv0_stride, U.comp(uo, 0, 0), U.comp(uo, 1, 1), sr_uv0.accessor_offset)
 
       loop_u1 = None
       if u1i is not None and uv1_arr.size and sr_uv1:
-        uo1 = sr_uv1.offsets or [0,1]
-        uv = gather2(uv1_arr, u1i, uv1_stride, U.comp(uo1,0,0), U.comp(uo1,1,1), sr_uv1.accessor_offset)
-        loop_u1 = uv
+        uo1 = sr_uv1.offsets or [0, 1]
+        loop_u1 = gather2(uv1_arr, u1i, uv1_stride, U.comp(uo1, 0, 0), U.comp(uo1, 1, 1), sr_uv1.accessor_offset)
 
       uv0_list.append(loop_u0)
       uv1_list.append(loop_u1)
@@ -258,19 +298,20 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     pi_all_orig = np.concatenate(pi_list_original, axis=0).astype(np.int64, copy=False)
     nloops = int(pi_all.shape[0])
     nfaces = nloops // 3
+
     use_shared_vertices = (sr_pos_common is not None) and not mixed_position_sources
 
     if use_shared_vertices:
       max_pi = int(pi_all.max()) if pi_all.size else -1
       nv = max_pi + 1
       pos_arr_all = sr_pos_common.float_array_np()
-      o = pos_offsets or [0,1,2]
+      o = pos_offsets or [0, 1, 2]
       s = pos_stride_common or 3
       idx_all = np.arange(nv, dtype=np.int64)
       base = sr_pos_common.accessor_offset + idx_all * s
-      xs = pos_arr_all[base + U.comp(o,0,0)]
-      ys = pos_arr_all[base + U.comp(o,1,1)]
-      zs = pos_arr_all[base + U.comp(o,2,2)]
+      xs = pos_arr_all[base + U.comp(o, 0, 0)]
+      ys = pos_arr_all[base + U.comp(o, 1, 1)]
+      zs = pos_arr_all[base + U.comp(o, 2, 2)]
       verts_np = np.stack([xs, ys, zs], axis=1).astype(np.float32, copy=False)
     else:
       loop_pos_chunks = []
@@ -278,9 +319,9 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         arr = sr_chunk.float_array_np() if sr_chunk else np.empty(0, np.float32)
         if arr.size and pi_chunk.size:
           base = sr_chunk.accessor_offset + (pi_chunk.astype(np.int64, copy=False) * s_chunk)
-          xs = arr[base + U.comp(o_chunk,0,0)]
-          ys = arr[base + U.comp(o_chunk,1,1)]
-          zs = arr[base + U.comp(o_chunk,2,2)]
+          xs = arr[base + U.comp(o_chunk, 0, 0)]
+          ys = arr[base + U.comp(o_chunk, 1, 1)]
+          zs = arr[base + U.comp(o_chunk, 2, 2)]
           loop_pos_chunks.append(np.stack([xs, ys, zs], axis=1))
         else:
           loop_pos_chunks.append(np.zeros((pi_chunk.shape[0], 3), dtype=np.float32))
@@ -328,18 +369,39 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     for sym, mname in sym2matname.items():
       bmat = ensure_empty_material(mname)
       if bmat:
-        midx = ensure_material_slot(me, bmat)
-        symbol_to_matindex[sym] = midx
+        symbol_to_matindex[sym] = ensure_material_slot(me, bmat)
 
     fallback_name = get_first_bound_material_name(inst_like, root) or "Default"
     fallback_mat = ensure_empty_material(fallback_name)
     fallback_index = ensure_material_slot(me, fallback_mat) if fallback_mat else 0
 
+    instance_bound_names = list(sym2matname.values())
+    single_bound_name = instance_bound_names[0] if len(set(instance_bound_names)) == 1 and instance_bound_names else None
+    single_bound_index = None
+    if single_bound_name:
+      single_bound_mat = ensure_empty_material(single_bound_name)
+      if single_bound_mat:
+        single_bound_index = ensure_material_slot(me, single_bound_mat)
+
     face_material_indices = np.full(nfaces, fallback_index, dtype=np.int32)
     for fstart, fcount, sym in prim_face_spans:
-      if fcount <= 0: continue
-      midx = symbol_to_matindex.get(sym, fallback_index)
-      face_material_indices[fstart:fstart+fcount] = midx
+      if fcount <= 0:
+        continue
+
+      midx = symbol_to_matindex.get(sym)
+
+      if midx is None:
+        mname2 = resolve_material_name_loose(sym)
+        if mname2:
+          bmat2 = ensure_empty_material(mname2)
+          midx = ensure_material_slot(me, bmat2) if bmat2 else fallback_index
+        elif single_bound_index is not None:
+          midx = single_bound_index
+        else:
+          midx = fallback_index
+
+      face_material_indices[fstart:fstart + fcount] = midx
+
     me.polygons.foreach_set("material_index", face_material_indices)
 
     if uv0_np is not None and uv0_np.size == nloops * 2:
@@ -349,9 +411,13 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       uv1_layer = me.uv_layers.new(name="UVMap2")
       uv1_layer.data.foreach_set("uv", uv1_np.ravel(order='C'))
 
-    if cols_np is not None and cols_np.size == nloops * 4 and (cols_np != 1.0).any():
-      vcol = me.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
+    if cols_np is not None and cols_np.size == nloops * 4:
+      vcol = me.color_attributes.new(name="Col", type='FLOAT_COLOR', domain='CORNER')
       vcol.data.foreach_set("color", cols_np.ravel(order='C'))
+      try:
+        me.color_attributes.active_color = vcol
+      except Exception:
+        pass
 
     try:
       me.validate(clean_customdata=True)
@@ -405,15 +471,18 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       for ip in parent.findall('{*}input'):
         if (ip.get('semantic') or '').upper() == sem:
           url = ip.get('source') or ''
-          if url.startswith('#'): url = url[1:]
+          if url.startswith('#'):
+            url = url[1:]
           src = None
           for s in skin.findall('{*}source'):
             if s.get('id') == url:
-              src = s; break
+              src = s
+              break
           if src is None:
             for s in skin.iter('{*}source'):
               if s.get('id') == url:
-                src = s; break
+                src = s
+                break
           if src is None:
             return None
           return SourceReader(src, desired)
@@ -435,13 +504,13 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       jname = sr_joint_names.getStringValue(j) or f"J{j}"
       eb = arm.edit_bones.new(jname)
       node = nodes_by_id.get(jname)
-      head = mathutils.Vector((0,0,0))
-      tail = mathutils.Vector((0,0.1,0))
+      head = mathutils.Vector((0, 0, 0))
+      tail = mathutils.Vector((0, 0.1, 0))
       if node is not None:
-        tx = [c for c in node if U.tag_name(c) in ('translate','rotate','scale','matrix','skew','lookat')]
+        tx = [c for c in node if U.tag_name(c) in ('translate', 'rotate', 'scale', 'matrix', 'skew', 'lookat')]
         mat = node_local_matrix(tx)
         head = (parent_world @ mat).to_translation()
-        tail = head + mathutils.Vector((0,0.1,0))
+        tail = head + mathutils.Vector((0, 0.1, 0))
       eb.head = head
       eb.tail = tail
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -470,12 +539,11 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     idx = 0
     nv = len(me.vertices)
     weights_arr = sr_weights.float_array_np(dtype=np.float32)
-    # sr_weights.accessor_offset is respected below
     for vtx in range(vcount_arr.size):
       n_infl = int(vcount_arr[vtx])
       for _ in range(n_infl):
-        j_idx = v_arr[idx + offs.get('JOINT',0)]
-        w_idx = v_arr[idx + offs.get('WEIGHT',0)]
+        j_idx = v_arr[idx + offs.get('JOINT', 0)]
+        w_idx = v_arr[idx + offs.get('WEIGHT', 0)]
         idx += stride
         if j_idx < 0 or w_idx < 0:
           continue
@@ -489,7 +557,7 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         if vg is None:
           continue
         if use_shared:
-          target_vid = vtx if vtx < nv else (nv-1)
+          target_vid = vtx if vtx < nv else (nv - 1)
           vg.add([target_vid], w, 'ADD')
         else:
           mask = (pi_per_loop == vtx)
@@ -527,7 +595,8 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       for ip in parent.findall('{*}input'):
         if (ip.get('semantic') or '').upper() == sem:
           url = ip.get('source') or ''
-          if url.startswith('#'): url = url[1:]
+          if url.startswith('#'):
+            url = url[1:]
           for s in morph.findall('{*}source'):
             if s.get('id') == url:
               return SourceReader(s, desired)
@@ -547,29 +616,30 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       if tgeom is None:
         for g in root.findall('.//{*}geometry'):
           if (g.get('id') or '') == gid:
-            tgeom = g; break
+            tgeom = g
+            break
       if tgeom is None:
         continue
       tmesh = tgeom.find('{*}mesh')
       if tmesh is None:
         continue
 
-      prims = [p for p in tmesh if U.tag_name(p) in ('triangles','polylist','polygons','tristrips','trifans')]
+      prims = [p for p in tmesh if U.tag_name(p) in ('triangles', 'polylist', 'polygons', 'tristrips', 'trifans')]
       if not prims:
         continue
       buckets, _, _ = classify_inputs(prims[0].findall('{*}input'))
-      sr_pos = read_source_reader_from_input(tmesh, buckets['POSITION'], [['X','Y','Z']], 'POSITION')
+      sr_pos = read_source_reader_from_input(tmesh, buckets['POSITION'], [['X', 'Y', 'Z']], 'POSITION')
       if sr_pos is None:
         continue
       tarr = sr_pos.float_array_np()
       s = sr_pos.stride()
-      o = sr_pos.offsets or [0,1,2]
+      o = sr_pos.offsets or [0, 1, 2]
       count = sr_pos.size()
       idx_all = np.arange(count, dtype=np.int64)
       base = sr_pos.accessor_offset + idx_all * s
-      tx = tarr[base + U.comp(o,0,0)]
-      ty = tarr[base + U.comp(o,1,1)]
-      tz = tarr[base + U.comp(o,2,2)]
+      tx = tarr[base + U.comp(o, 0, 0)]
+      ty = tarr[base + U.comp(o, 1, 1)]
+      tz = tarr[base + U.comp(o, 2, 2)]
       tpos = np.stack([tx, ty, tz], axis=1).astype(np.float32, copy=False)
 
       key = base_obj.shape_key_add(name=f"Target_{i}", from_mix=False)
@@ -577,20 +647,20 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       if use_shared and len(me.vertices) <= tpos.shape[0]:
         co[:len(me.vertices), :] = tpos[:len(me.vertices), :]
       else:
-        idx = np.clip(pi_per_loop, 0, tpos.shape[0]-1)
+        idx = np.clip(pi_per_loop, 0, tpos.shape[0] - 1)
         co = tpos[idx, :]
       if co.shape[0] != len(me.vertices):
         co = np.resize(co, (len(me.vertices), 3))
       key.data.foreach_set("co", co.ravel(order='C'))
 
   def process_node(dom_node, parent_world):
-    tx_elems = [c for c in dom_node if U.tag_name(c) in ('translate','rotate','scale','matrix','skew','lookat')]
+    tx_elems = [c for c in dom_node if U.tag_name(c) in ('translate', 'rotate', 'scale', 'matrix', 'skew', 'lookat')]
     local = node_local_matrix(tx_elems)
     world = parent_world @ local
 
     invert_geom = (U.mat_det(world) < 0.0)
     if invert_geom:
-      world = world @ mathutils.Matrix.Scale(-1.0, 4, (0,0,1))
+      world = world @ mathutils.Matrix.Scale(-1.0, 4, (0, 0, 1))
 
     for inst in dom_node.findall('{*}instance_geometry'):
       url = inst.get('url', '')
