@@ -29,14 +29,7 @@ def get_bsdf_input(bsdf, names):
   raise KeyError(f"None of the inputs {names} exist on Principled BSDF")
 
 def find_uv_name_for_material(mat, index=0):
-  for o in bpy.context.scene.objects:
-    if o.type == 'MESH':
-      for ms in o.material_slots:
-        if ms.material == mat:
-          uvs = o.data.uv_layers
-          if index < len(uvs):
-            return uvs[index].name
-  return None
+  return "UVMap" if index == 0 else "UVMap2"
 
 def img_for_relpath(relpath: str, level_dir: Path | None):
   p = try_resolve_image_path(relpath, level_dir)
@@ -118,9 +111,18 @@ def connect_img(nt, rel, level_dir, colorspace, use_uv2, uv2_name, uv1_name, lab
       mapn.inputs['Scale'].default_value[0] = float(scale[0])
       mapn.inputs['Scale'].default_value[1] = float(scale[1])
       mapn.inputs['Scale'].default_value[2] = 1.0
-      texcoord = nt.nodes.new('ShaderNodeTexCoord')
-      nt.links.new(texcoord.outputs['UV'], mapn.inputs['Vector'])
+
+      uvn = uv_node(nt, uv1_name) if uv1_name else nt.nodes.new('ShaderNodeTexCoord')
+      uv_out = uvn.outputs['UV'] if 'UV' in uvn.outputs else uvn.outputs['UV']
+      nt.links.new(uv_out, mapn.inputs['Vector'])
       nt.links.new(mapn.outputs['Vector'], vector_in)
+    else:
+      if uv1_name:
+        uvn = uv_node(nt, uv1_name)
+        nt.links.new(uvn.outputs['UV'], vector_in)
+      else:
+        texcoord = nt.nodes.new('ShaderNodeTexCoord')
+        nt.links.new(texcoord.outputs['UV'], vector_in)
   return img
 
 def set_material_blend_shadow(mat, *, blend_mode=None, alpha_threshold=None, shadow='AUTO'):
@@ -211,3 +213,16 @@ def sample_tiled_img(nt, relpath, level_dir, size_meters=1.0, colorspace='sRGB',
   img = img_node(nt, relpath, level_dir, colorspace=colorspace, label=label)
   nt.links.new(mapn.outputs['Vector'], img.inputs['Vector'])
   return img, mapn
+
+def ensure_uv_layers_named(me, uv0="UVMap", uv1="UVMap2"):
+  if not me or not hasattr(me, "uv_layers"):
+    return
+  uvs = me.uv_layers
+
+  if len(uvs) < 1:
+    uvs.new(name=uv0)
+  uvs[0].name = uv0
+
+  if len(uvs) < 2:
+    uvs.new(name=uv1)
+  uvs[1].name = uv1

@@ -19,6 +19,7 @@ from .core.import_sources import (
   scan_material_packs_in_zip,
 )
 from .core.normalize import normalize_records, normalize_forest
+from .materials.common import ensure_uv_layers_named
 from .materials.v15 import build_pbr_v15_material
 from .materials.v0 import build_pbr_v0_material
 from .materials.terrain_v15 import build_terrain_material_v15
@@ -316,6 +317,9 @@ def import_level(scene, props, operator=None):
 
     # Shapes
     import_collada_shapes(ctx)
+    for obj in bpy.data.objects:
+      if obj.type == 'MESH' and obj.data:
+        ensure_uv_layers_named(obj.data, "UVMap", "UVMap2")
     for d in ("Cube", "Light", "Lamp", "Camera"):
       delete_object_if_exists(d)
     dedupe_materials()
