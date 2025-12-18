@@ -80,9 +80,9 @@ class BeamNGLevelImporterproperties(bpy.types.PropertyGroup):
 
   # Scanner / overlay props
   use_scanner: BoolProperty(
-    name="Use Level Scanner",
+    name="Use BeamNG Filesystem",
     default=True,
-    description="Scan game and user folders for levels and build virtual overlay"
+    description="Scan game and user folders for levels and build vfs cache. If disabled, manual level path/zip will be used giving worse importing results."
   )
   # Dynamic-default fields (show Add-on Preferences defaults if scene value empty)
   game_install: StringProperty(
@@ -101,9 +101,9 @@ class BeamNGLevelImporterproperties(bpy.types.PropertyGroup):
   )
 
   overlay_patches: BoolProperty(
-    name="Merge Patches",
+    name="Merge Pathes",
     default=True,
-    description="Merge unpacked/zips (mods override game) into a temporary overlay"
+    description="Merge unpacked/zips (mods override game) into a Filesystem for better importing results."
   )
 
   selected_level: EnumProperty(

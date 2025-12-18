@@ -62,7 +62,7 @@ def _rebuild_level_list(props):
 
 class BEAMNG_OT_ScanLevels(Operator):
   bl_idname = "beamng.scan_levels"
-  bl_label = "Scan Levels"
+  bl_label = "Scan Data"
   bl_description = "Scan game/user for levels, art/assets, and index all files (mods and game, zips and unpacked)"
   bl_options = {'REGISTER', 'UNDO'}
 
