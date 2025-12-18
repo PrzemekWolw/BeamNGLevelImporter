@@ -33,14 +33,19 @@ def _shape_key(shape_name: str | None) -> str:
   base = os.path.basename(s) if s else ""
   return (base or "tsstatic").lower()
 
+def _apply_custom_props(obj, data_dict):
+  for k, v in data_dict.items():
+    try:
+      obj[k] = v
+    except Exception as e:
+      print(f"Could not store custom property {k} on {obj.name}: {e}")
+
 
 def build_mission_objects(ctx):
   ctx.progress.update("Importing mission data...")
-
   # Collect TSStatic items for batched instancing
   ts_groups = defaultdict(list)
   groundcovers_present = False
-
   terrain_target_obj = None
   pending_decalroads = []
 
@@ -52,7 +57,10 @@ def build_mission_objects(ctx):
     pos = i.get('position') or [0, 0, 0]
     scl = _normalize_scale(i.get('scale') or [1, 1, 1])
 
+    handled = False  # track whether we did something specific for this class
+
     if cls == 'ScatterSky':
+      handled = True
       world = bpy.context.scene.world
       if world and world.node_tree:
         nt = world.node_tree
@@ -73,36 +81,54 @@ def build_mission_objects(ctx):
         sky.sun_intensity = 0.4
 
     elif cls == 'CameraBookmark':
+      handled = True
       name = i.get('internalName') or 'CameraBookmark'
-      make_camera_fast(name, pos, rot_euler, parent_coll)
+      obj = make_camera_fast(name, pos, rot_euler, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'SFXEmitter':
+      handled = True
       name = i.get('name') or 'SFXEmitter'
-      make_speaker_fast(name, pos, rot_euler, scl, parent_coll)
+      obj = make_speaker_fast(name, pos, rot_euler, scl, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'SpotLight':
+      handled = True
       name = i.get('name') or 'SpotLight'
       rot_euler_rot = rot_euler.copy()
       rot_euler_rot.rotate_axis('X', math.radians(90))
       brightness = float(i.get('brightness') or 1) * 100.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
       angle = float(i.get('outerAngle') or math.radians(45))
-      make_light_fast('SPOT', name, pos, rot_euler_rot, scl, brightness, color, parent_coll, angle)
+      obj = make_light_fast('SPOT', name, pos, rot_euler_rot, scl, brightness, color, parent_coll, angle)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'PointLight':
+      handled = True
       name = i.get('name') or 'PointLight'
       brightness = float(i.get('brightness') or 1) * 100.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
-      make_light_fast('POINT', name, pos, rot_euler, scl, brightness, color, parent_coll)
+      obj = make_light_fast('POINT', name, pos, rot_euler, scl, brightness, color, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'GroundPlane':
-      make_plane_fast('GroundPlane', 100000, pos, rot_euler, parent_coll)
+      handled = True
+      obj = make_plane_fast('GroundPlane', 100000, pos, rot_euler, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'WaterBlock':
+      handled = True
       sc = (scl[0], scl[1], scl[2] / 2.0)
       pz = (pos[0], pos[1], pos[2] - sc[2])
       name = i.get('name') or 'WaterBlock'
       obj = make_cube_fast(name, sc, pz, rot_euler, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
       try:
         wmat = build_water_material_for_object(name, i, ctx.config.level_path)
         if obj and obj.data:
@@ -117,10 +143,13 @@ def build_mission_objects(ctx):
         print(f"WaterBlock material error for {name}: {e}")
 
     elif cls == 'WaterPlane':
+      handled = True
       sc = (scl[0], scl[1], scl[2] / 2.0)
       pz = (pos[0], pos[1], pos[2] - sc[2])
       name = i.get('name') or 'WaterPlane'
       obj = make_plane_fast(name, 100000, pos, rot_euler, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
       try:
         wmat = build_water_material_for_object(name, i, ctx.config.level_path)
         if obj and obj.data:
@@ -135,37 +164,49 @@ def build_mission_objects(ctx):
         print(f"WaterPlane material error for {name}: {e}")
 
     elif cls == 'River':
+      handled = True
       name = i.get('name') or 'River'
       nodes = i.get('nodes') or []
       subdiv_len = i.get('subdivideLength') or i.get('SubdivideLength') or 1.0
-      make_river_from_nodes_catmull(
+      obj = make_river_from_nodes_catmull(
         name, nodes, float(subdiv_len),
         parent_coll, build_water_material_for_object, ctx.config.level_path
       )
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'DecalRoad':
+      handled = True
       name = i.get('name') or 'DecalRoad'
       if terrain_target_obj is not None:
         i['useShrinkwrap'] = True
         i['shrinkwrapTarget'] = terrain_target_obj.name
-        make_decal_road(name, i, parent_coll)
+        obj = make_decal_road(name, i, parent_coll)
+        if obj:
+          _apply_custom_props(obj, i)
+
       else:
         pending_decalroads.append((name, i.copy(), parent_coll))
 
     elif cls == 'MeshRoad':
+      handled = True
       name = i.get('name') or 'MeshRoad'
-      make_mesh_road(name, i, parent_coll)
+      obj = make_mesh_road(name, i, parent_coll)
+      if obj:
+        _apply_custom_props(obj, i)
 
     elif cls == 'TerrainBlock':
+      handled = True
       parent_coll = get_parent_collection(i.get('__parent'))
       terrain_obj = import_terrain_block(ctx, i)
       if terrain_obj:
         fast_link(terrain_obj, parent_coll)
         if terrain_target_obj is None and getattr(terrain_obj, "type", None) == 'MESH':
           terrain_target_obj = terrain_obj
-
+        _apply_custom_props(terrain_obj, i)
 
     elif cls == 'TSStatic':
+      handled = True
       shapeName = i.get('shapeName')
       inst_name = _shape_key(shapeName)
       # Collect for instancing
@@ -176,7 +217,25 @@ def build_mission_objects(ctx):
       })
 
     elif cls == 'GroundCover':
+      handled = True
       groundcovers_present = True
+
+    if not handled and cls and not cls == 'SimGroup':
+      name = i.get('name') or i.get('internalName') or cls
+      empty = bpy.data.objects.new(name, None)
+      empty.empty_display_type = 'PLAIN_AXES'
+      empty.location = pos
+      empty.rotation_euler = rot_euler
+      empty.scale = scl
+
+      for k, v in i.items():
+        try:
+          empty[k] = v
+        except Exception as e:
+          print(f"Could not store custom property {k} on {name}: {e}")
+
+      if parent_coll:
+        parent_coll.objects.link(empty)
 
     if (idx & 31) == 0:
       ctx.progress.update(step=1)
@@ -192,10 +251,14 @@ def build_mission_objects(ctx):
     if terrain_target_obj is not None:
       for name, data, coll in pending_decalroads:
         data['shrinkwrapTarget'] = terrain_target_obj.name
-        make_decal_road(name, data, coll)
+        obj = make_decal_road(name, data, coll)
+        if obj:
+          _apply_custom_props(obj, i)
     else:
       for name, data, coll in pending_decalroads:
-        make_decal_road(name, data, coll)
+        obj = make_decal_road(name, data, coll)
+        if obj:
+          _apply_custom_props(obj, i)
 
   # Build TSStatic instancers
   if ts_groups:
