@@ -38,7 +38,7 @@ def _getf(v,k,d=None):
   try: return float(v.get(k)) if (isinstance(v,dict) and v.get(k) is not None) else d
   except: return d
 
-def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], terrain_world_size: float | None = None):
+def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], terrain_world_size: float | None = None, mat_dir: Path | None = None):
   name = f"{_get(v,'internalName','Terrain')}-{_get(v,'persistentId','')}"
   mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
   mat.use_nodes = True
@@ -101,10 +101,10 @@ def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], ter
     link(links, over_srgb, mix.inputs[2])
     return _to_linear(mix.outputs[0], x+420, y-40, parent)
 
-  def _sample_per_meter(path, tex_size, label, colorspace='sRGB', x=X_COLOR-240, y=ROW0, parent=frame_color):
+  def _sample_per_meter(path, tex_size, label, colorspace='sRGB', x=X_COLOR-240, y=ROW0, parent=frame_color, mat_dir: Path | None = None):
     if not path: return None
     size_eff = (float(tex_size)/world_w) if world_w > 0 else float(tex_size)
-    img,_ = sample_tiled_img(nt, path, level_dir, size_meters=size_eff, colorspace=colorspace, invert_y=True, uv_name=uv_name, label=label)
+    img,_ = sample_tiled_img(nt, path, level_dir, size_meters=size_eff, colorspace=colorspace, invert_y=True, uv_name=uv_name, label=label, mat_dir=mat_dir)
     if img: place(img, x, y, parent, label)
     return img
 
@@ -129,10 +129,10 @@ def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], ter
 
   col = None
   if det:
-    dimg = _sample_per_meter(det, detSize, 'Detail (Base)', 'sRGB', x=X_COLOR-240, y=ROW0, parent=frame_color)
+    dimg = _sample_per_meter(det, detSize, 'Detail (Base)', 'sRGB', x=X_COLOR-240, y=ROW0, parent=frame_color, mat_dir=mat_dir)
     col = dimg.outputs[0] if dimg else None
   elif diff:
-    dimg,_ = sample_tiled_img(nt, diff, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name=uv_name, label='Diffuse (Base)')
+    dimg,_ = sample_tiled_img(nt, diff, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name=uv_name, label='Diffuse (Base)', mat_dir=mat_dir)
     if dimg: place(dimg, X_COLOR-240, ROW0, frame_color, 'Diffuse (Base)')
     col = dimg.outputs[0] if dimg else None
   else:
@@ -141,13 +141,13 @@ def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], ter
     col = rgb.outputs[0]
 
   if det and diff and col:
-    dimg2,_ = sample_tiled_img(nt, diff, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name=uv_name, label='Diffuse (SoftLight)')
+    dimg2,_ = sample_tiled_img(nt, diff, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name=uv_name, label='Diffuse (SoftLight)', mat_dir=mat_dir)
     if dimg2: place(dimg2, X_COLOR-240, ROW0-120, frame_color, 'Diffuse (SoftLight)')
     fac0 = value_node(nt, 1.0); place(fac0, X_COLOR-20, ROW0-120, frame_color, 'Fac 1.0')
     col = _softlight_gamma(col, dimg2.outputs[0], fac0.outputs[0], X_COLOR+80, ROW0-120, frame_color)
 
   if mac and col:
-    mimg = _sample_per_meter(mac, macSize, 'Macro', 'sRGB', x=X_COLOR-240, y=ROW0-260, parent=frame_color)
+    mimg = _sample_per_meter(mac, macSize, 'Macro', 'sRGB', x=X_COLOR-240, y=ROW0-260, parent=frame_color, mat_dir=mat_dir)
     if mimg:
       mfac = value_node(nt, macStr); place(mfac, X_COLOR-20, ROW0-300, frame_color, f'Macro Strength {macStr:.2f}')
       facMul = nt.nodes.new('ShaderNodeMath'); facMul.operation='MULTIPLY'
@@ -169,7 +169,7 @@ def build_terrain_material_v0(level_dir: Path, v: dict, out_list: list[str], ter
     except KeyError: pass
 
   if nrm:
-    nimg = _sample_per_meter(nrm, detSize if det else 2.0, 'Normal', 'Non-Color', x=X_NORMAL-240, y=ROW0, parent=frame_nrm)
+    nimg = _sample_per_meter(nrm, detSize if det else 2.0, 'Normal', 'Non-Color', x=X_NORMAL-240, y=ROW0, parent=frame_nrm, mat_dir=mat_dir)
     if nimg:
       nmap = nt.nodes.new('ShaderNodeNormalMap'); nmap.inputs['Strength'].default_value = 1.0
       place(nmap, X_NORMAL-20, ROW0, frame_nrm, 'Normal Map')

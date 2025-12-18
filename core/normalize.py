@@ -163,3 +163,35 @@ def normalize_forest(forest_list: list[dict]):
     if 'scale' in it and isinstance(it['scale'], str) and re.search(r'\d', it['scale']):
       try: it['scale'] = float(it['scale'])
       except Exception: it['scale'] = 1.0
+
+def resolve_texture_relative(tex: str, *, mat_dir: Path | None, level_dir: Path | None) -> str:
+  """
+  If 'tex' is just a filename (no '/' or '\\'), try to resolve it relative to
+  the material file directory (mat_dir). If that fails, return original string.
+  This returns a virtual / BeamNG-style path string (using '/') that
+  try_resolve_image_path/resolve_any_beamng_path can understand.
+  """
+  if not tex or "/" in tex or "\\" in tex:
+    return tex
+  if not mat_dir:
+    return tex
+  # Try common relative locations from the material file
+  # e.g. <mat_dir>/textures/<name>, <mat_dir>/<name>
+  candidates = [
+    mat_dir / "textures" / tex,
+    mat_dir / tex,
+  ]
+  from .paths import exists_insensitive, get_real_case_path  # circular-safe import
+  for c in candidates:
+    if exists_insensitive(c):
+      c2 = get_real_case_path(c)
+      # Convert absolute filesystem path back to a virtual-style path, relative to level_dir if possible
+      try:
+        if level_dir and c2.is_relative_to(level_dir):
+          # e.g. /.../levels/mylevel/art/road/road_d.dds -> "levels/mylevel/art/road/road_d.dds"
+          rel = c2.relative_to(level_dir.parent)
+          return str(rel).replace("\\", "/")
+      except Exception:
+        pass
+      return str(c2).replace("\\", "/")
+  return tex

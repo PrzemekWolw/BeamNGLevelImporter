@@ -91,13 +91,13 @@ def _center_vec(nt, col_socket):
   link(nt.links, mul2.outputs[0], sub1.inputs[0]); link(nt.links, one.outputs[0], sub1.inputs[1])
   return sub1.outputs[0]
 
-def _sample_per_meter(nt, level_dir, path, tex_size_m, world_w, label, colorspace='sRGB'):
+def _sample_per_meter(nt, level_dir, path, tex_size_m, world_w, label, colorspace='sRGB', mat_dir: Path | None = None):
   if not path: return None
   size_eff = (float(tex_size_m)/float(world_w)) if (world_w and world_w > 0) else float(tex_size_m)
-  img,_ = sample_tiled_img(nt, path, level_dir, size_meters=size_eff, colorspace=colorspace, invert_y=False, uv_name='UV_TERRAIN01', label=label)
+  img,_ = sample_tiled_img(nt, path, level_dir, size_meters=size_eff, colorspace=colorspace, invert_y=False, uv_name='UV_TERRAIN01', label=label, mat_dir=mat_dir)
   return img
 
-def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], terrain_world_size: float | None = None):
+def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], terrain_world_size: float | None = None, mat_dir: Path | None = None):
   name = f"{_get(v,'internalName','Terrain')}-{_get(v,'persistentId','')}"
   mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
   mat.use_nodes = True
@@ -196,12 +196,12 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
 
   base_col = None
   if col_base:
-    bimg,_ = sample_tiled_img(nt, col_base, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=False, uv_name='UV_TERRAIN01', label='BaseColor Base')
+    bimg,_ = sample_tiled_img(nt, col_base, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=False, uv_name='UV_TERRAIN01', label='BaseColor Base', mat_dir=mat_dir)
     if bimg: place(bimg, X_COLOR-240, ROW0, frame_color, label='BaseColor Base')
     base_col = bimg.outputs[0] if bimg else None
 
   if col_macro and base_col:
-    mimg = _sample_per_meter(nt, level_dir, col_macro, bmac_size, world_w, 'BaseColor Macro', 'Non-Color')
+    mimg = _sample_per_meter(nt, level_dir, col_macro, bmac_size, world_w, 'BaseColor Macro', 'Non-Color', mat_dir=mat_dir)
     if mimg:
       place(mimg, X_COLOR-240, ROW0-100, frame_color, label='BaseColor Macro')
       centered = _center_vec(nt, mimg.outputs[0]); centered.node.label = 'Center Macro'
@@ -215,7 +215,7 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
       base_col = addn.outputs[0]
 
   if col_detail and base_col:
-    dimg = _sample_per_meter(nt, level_dir, col_detail, bdet_size, world_w, 'BaseColor Detail', 'Non-Color')
+    dimg = _sample_per_meter(nt, level_dir, col_detail, bdet_size, world_w, 'BaseColor Detail', 'Non-Color', mat_dir=mat_dir)
     if dimg:
       place(dimg, X_COLOR-240, ROW0-220, frame_color, label='BaseColor Detail')
       centered = _center_vec(nt, dimg.outputs[0]); centered.node.label = 'Center Detail'
@@ -233,14 +233,14 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
 
   # Roughness stack
   if rgh_base:
-    rb,_ = sample_tiled_img(nt, rgh_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='Rgh Base')
+    rb,_ = sample_tiled_img(nt, rgh_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='Rgh Base', mat_dir=mat_dir)
     if rb: place(rb, X_ROUGH-240, ROW0, frame_rough, label='Roughness Base')
     if rb:
       rough = rgb_to_bw_socket(nt, rb.outputs[0]); rough.node.label = 'Rgh BW'
 
       def add_r(path, size, fac, base_r, label):
         if not path or not base_r: return base_r
-        img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color')
+        img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color', mat_dir=mat_dir)
         if not img: return base_r
         place(img, X_ROUGH-240, ROW0 - (100 if 'Macro' in label else 200), frame_rough, label=label)
         bw = rgb_to_bw_socket(nt, img.outputs[0]); bw.node.label = f'{label} BW'
@@ -260,14 +260,14 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
 
   # AO base + macro/detail (Non-Color; not wired to Principled AO by default)
   if ao_base:
-    ab,_ = sample_tiled_img(nt, ao_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='AO Base')
+    ab,_ = sample_tiled_img(nt, ao_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='AO Base', mat_dir=mat_dir)
     if ab: place(ab, X_AO-240, ROW0, frame_ao, label='AO Base')
     if ab:
       ao_val = rgb_to_bw_socket(nt, ab.outputs[0]); ao_val.node.label = 'AO BW'
 
       def add_ao(path, size, fac, base_ao, label):
         if not path or not base_ao: return base_ao
-        img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color')
+        img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color', mat_dir=mat_dir)
         if not img: return base_ao
         place(img, X_AO-240, ROW0 - (100 if 'Macro' in label else 200), frame_ao, label=label)
         bw = rgb_to_bw_socket(nt, img.outputs[0]); bw.node.label = f'{label} BW'
@@ -286,7 +286,7 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
 
   n_out = None
   if nrm_base:
-    nb,_ = sample_tiled_img(nt, nrm_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='Normal Base')
+    nb,_ = sample_tiled_img(nt, nrm_base, level_dir, size_meters=1.0, colorspace='Non-Color', invert_y=False, uv_name='UV_TERRAIN01', label='Normal Base', mat_dir=mat_dir)
     if nb: place(nb, X_NRM-240, ROW0, frame_nrm, label='Normal Base')
     if nb:
       nmap = nt.nodes.new('ShaderNodeNormalMap'); nmap.inputs['Strength'].default_value = 1.0
@@ -295,7 +295,7 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
       n_out = nmap.outputs[0]
 
   def nmap_from(path, size, label):
-    img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color')
+    img = _sample_per_meter(nt, level_dir, path, size, world_w, label, 'Non-Color', mat_dir=mat_dir)
     if not img: return None, None
     place(img, X_NRM-240, ROW0 - (100 if 'Macro' in label else 200), frame_nrm, label=label)
     nm = nt.nodes.new('ShaderNodeNormalMap'); nm.inputs['Strength'].default_value = 1.0

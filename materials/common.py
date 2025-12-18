@@ -7,7 +7,7 @@
 
 import bpy
 from pathlib import Path
-from ..core.paths import try_resolve_image_path
+from ..core.paths import try_resolve_image_path, resolve_texture_relative
 
 def try_get(d, k, default=None):
   return d[k] if (isinstance(d, dict) and k in d) else default
@@ -31,20 +31,22 @@ def get_bsdf_input(bsdf, names):
 def find_uv_name_for_material(mat, index=0):
   return "UVMap" if index == 0 else "UVMap2"
 
-def img_for_relpath(relpath: str, level_dir: Path | None):
-  p = try_resolve_image_path(relpath, level_dir)
-  if not p: return None
+def img_for_relpath(relpath: str, level_dir: Path | None, mat_dir: Path | None = None):
+  rel = resolve_texture_relative(relpath, mat_dir=mat_dir, level_dir=level_dir)
+  p = try_resolve_image_path(rel, level_dir)
+  if not p:
+    return None
   try:
     return bpy.data.images.load(str(p), check_existing=True)
   except Exception:
     return None
 
-def img_node(nt, relpath, level_dir, colorspace='sRGB', label=''):
+def img_node(nt, relpath, level_dir, colorspace='sRGB', label='', mat_dir: Path | None = None):
   n = nt.nodes.new('ShaderNodeTexImage')
   n.label = label
   n.name = label if label else n.name
   n.interpolation = 'Smart'
-  img = img_for_relpath(relpath, level_dir)
+  img = img_for_relpath(relpath, level_dir, mat_dir=mat_dir)
   if img:
     n.image = img
     try:
@@ -88,9 +90,9 @@ def clamp_01(nt, links, val_socket):
   links.new(val_socket, cl.inputs['Value'])
   return cl
 
-def connect_img(nt, rel, level_dir, colorspace, use_uv2, uv2_name, uv1_name, label='', scale=None):
+def connect_img(nt, rel, level_dir, colorspace, use_uv2, uv2_name, uv1_name, label='', scale=None, mat_dir: Path | None = None):
   if not rel: return None
-  img = img_node(nt, rel, level_dir, colorspace=colorspace, label=label)
+  img = img_node(nt, rel, level_dir, colorspace=colorspace, label=label, mat_dir=mat_dir)
   vector_in = img.inputs['Vector']
   need_mapping = isinstance(scale, (list, tuple)) and len(scale) >= 2 and (abs(scale[0]-1.0)>1e-6 or abs(scale[1]-1.0)>1e-6)
   if use_uv2 and uv2_name:
@@ -196,7 +198,7 @@ def rgb_to_bw_socket(nt, col):
   nt.links.new(col, n.inputs['Color'])
   return n.outputs['Val']
 
-def sample_tiled_img(nt, relpath, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name='UVMap', label=''):
+def sample_tiled_img(nt, relpath, level_dir, size_meters=1.0, colorspace='sRGB', invert_y=True, uv_name='UVMap', label='', mat_dir: Path | None = None):
   """
   Create UVMap + Mapping with tiling = 1/size_meters (Y flipped if invert_y), then an Image node.
   Returns (img_node, mapping_node). If relpath is falsy, returns (None, None).
@@ -210,7 +212,7 @@ def sample_tiled_img(nt, relpath, level_dir, size_meters=1.0, colorspace='sRGB',
   mapn.inputs['Scale'].default_value[1] = -tiling if invert_y else tiling
   mapn.inputs['Scale'].default_value[2] = 1.0
   nt.links.new(uv.outputs['UV'], mapn.inputs['Vector'])
-  img = img_node(nt, relpath, level_dir, colorspace=colorspace, label=label)
+  img = img_node(nt, relpath, level_dir, colorspace=colorspace, label=label, mat_dir=mat_dir)
   nt.links.new(mapn.outputs['Vector'], img.inputs['Vector'])
   return img, mapn
 

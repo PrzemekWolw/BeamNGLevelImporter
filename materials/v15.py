@@ -86,7 +86,7 @@ def layer_has_meaning(layer):
   if layer.get('vertColor', False) or layer.get('vtxColorToBaseColor', False): return True
   return False
 
-def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
+def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None, mat_dir: Path | None = None):
   if not mat_name or not isinstance(matdef, dict):
     return
   mat = bpy.data.materials.get(mat_name) or bpy.data.materials.new(mat_name)
@@ -177,7 +177,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
     this_color = bc_factor.outputs['Color']
 
     if bc_path:
-      bc_img = connect_img(nt, bc_path, level_dir, 'sRGB', bc_uv2, uv2_name, uv1_name, label=f'BaseColor L{idx}')
+      bc_img = connect_img(nt, bc_path, level_dir, 'sRGB', bc_uv2, uv2_name, uv1_name, label=f'BaseColor L{idx}', mat_dir=mat_dir)
       place(bc_img, layer_x-220, COL_BASE, frame)
       mul = new_node(nt, 'ShaderNodeMixRGB', label='Base * Tex', loc=(layer_x+180, COL_BASE), parent=frame)
       mul.blend_type = 'MULTIPLY'; mul.inputs['Fac'].default_value=1.0
@@ -195,7 +195,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       this_color = mul2.outputs['Color']
 
     if ao_path:
-      ao_img = connect_img(nt, ao_path, level_dir, 'Non-Color', ao_uv2, uv2_name, uv1_name, label=f'AO L{idx}')
+      ao_img = connect_img(nt, ao_path, level_dir, 'Non-Color', ao_uv2, uv2_name, uv1_name, label=f'AO L{idx}', mat_dir=mat_dir)
       place(ao_img, layer_x-220, COL_BASE-120, frame)
       ao_sep, ao_rname = make_separate_r(nt)
       place(ao_sep, layer_x, COL_BASE-120, frame, label='AO R')
@@ -207,7 +207,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       this_color = ao_mul.outputs['Color']
 
     if det_col_path and abs(detailBaseFac) > 1e-6:
-      det_img = connect_img(nt, det_col_path, level_dir, 'sRGB', det_col_uv2, uv2_name, uv1_name, label=f'DetailCol L{idx}', scale=detScale)
+      det_img = connect_img(nt, det_col_path, level_dir, 'sRGB', det_col_uv2, uv2_name, uv1_name, label=f'DetailCol L{idx}', scale=detScale, mat_dir=mat_dir)
       place(det_img, layer_x-220, COL_BASE-180, frame)
       vm_mul2 = new_node(nt, 'ShaderNodeVectorMath', label='(Detail*2)', loc=(layer_x, COL_BASE-180), parent=frame)
       vm_mul2.operation='MULTIPLY'
@@ -238,7 +238,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
     layer_opacity_val = value_node(nt, opacityFactor, f'Opacity L{idx}')
     place(layer_opacity_val, layer_x, COL_ALPHA, frame, label=f'Opacity Factor {opacityFactor:.2f}')
     if op_path:
-      op_img = connect_img(nt, op_path, level_dir, 'Non-Color', op_uv2, uv2_name, uv1_name, label=f'Opacity L{idx}')
+      op_img = connect_img(nt, op_path, level_dir, 'Non-Color', op_uv2, uv2_name, uv1_name, label=f'Opacity L{idx}', mat_dir=mat_dir)
       place(op_img, layer_x-220, COL_ALPHA, frame)
       sep, rname = make_separate_r(nt); place(sep, layer_x, COL_ALPHA-60, frame, label='Opacity R')
       link(links, op_img.outputs['Color'], sep.inputs[0])
@@ -276,7 +276,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
     alpha_prev = add_alpha.outputs['Value']
 
     if met_path:
-      met_img = connect_img(nt, met_path, level_dir, 'Non-Color', met_uv2, uv2_name, uv1_name, label=f'Metallic L{idx}')
+      met_img = connect_img(nt, met_path, level_dir, 'Non-Color', met_uv2, uv2_name, uv1_name, label=f'Metallic L{idx}', mat_dir=mat_dir)
       place(met_img, layer_x-220, COL_MR, frame)
       sep, rname = make_separate_r(nt); place(sep, layer_x, COL_MR, frame, label='Metallic R')
       link(links, met_img.outputs['Color'], sep.inputs[0])
@@ -296,7 +296,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
         place(mnode, layer_x, COL_MR, frame, label=f'Metallic {metallicFactor:.2f}')
         metallic_stack = mnode.outputs[0]
     if rou_path:
-      rou_img = connect_img(nt, rou_path, level_dir, 'Non-Color', rou_uv2, uv2_name, uv1_name, label=f'Roughness L{idx}')
+      rou_img = connect_img(nt, rou_path, level_dir, 'Non-Color', rou_uv2, uv2_name, uv1_name, label=f'Roughness L{idx}', mat_dir=mat_dir)
       place(rou_img, layer_x-220, COL_MR-80, frame)
       sep, rname = make_separate_r(nt); place(sep, layer_x, COL_MR-80, frame, label='Roughness R')
       link(links, rou_img.outputs['Color'], sep.inputs[0])
@@ -318,7 +318,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
 
     base_normal = None
     if nor_path:
-      nor_img = connect_img(nt, nor_path, level_dir, 'Non-Color', nor_uv2, uv2_name, uv1_name, label=f'Normal L{idx}')
+      nor_img = connect_img(nt, nor_path, level_dir, 'Non-Color', nor_uv2, uv2_name, uv1_name, label=f'Normal L{idx}', mat_dir=mat_dir)
       place(nor_img, layer_x-220, COL_NORMAL, frame)
       nrm_base = new_node(nt, 'ShaderNodeNormalMap', label=f'Normal Base (str {normalStrength:.2f})', loc=(layer_x, COL_NORMAL), parent=frame)
       nrm_base.inputs['Strength'].default_value = float(normalStrength)
@@ -326,7 +326,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       base_normal = nrm_base.outputs['Normal']
 
     if det_nrm_path and abs(detailNormFac) > 1e-6:
-      det_img = connect_img(nt, det_nrm_path, level_dir, 'Non-Color', det_nrm_uv2, uv2_name, uv1_name, label=f'DetailNorm L{idx}', scale=detScale)
+      det_img = connect_img(nt, det_nrm_path, level_dir, 'Non-Color', det_nrm_uv2, uv2_name, uv1_name, label=f'DetailNorm L{idx}', scale=detScale, mat_dir=mat_dir)
       place(det_img, layer_x-220, COL_NORMAL-100, frame)
       nrm_det = new_node(nt, 'ShaderNodeNormalMap', label=f'Detail Normal (str {detailNormFac:.2f})', loc=(layer_x, COL_NORMAL-100), parent=frame)
       nrm_det.inputs['Strength'].default_value = float(detailNormFac)
@@ -357,7 +357,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       place(emi_col, layer_x, COL_EMISSIVE, frame, label='Emissive Factor')
       emi_socket = emi_col.outputs['Color']
       if emi_path:
-        emi_img = connect_img(nt, emi_path, level_dir, 'sRGB', emi_uv2, uv2_name, uv1_name, label=f'Emissive L{idx}')
+        emi_img = connect_img(nt, emi_path, level_dir, 'sRGB', emi_uv2, uv2_name, uv1_name, label=f'Emissive L{idx}', mat_dir=mat_dir)
         place(emi_img, layer_x-220, COL_EMISSIVE, frame)
         emi_mul = new_node(nt, 'ShaderNodeMixRGB', label='Emit * Tex', loc=(layer_x+180, COL_EMISSIVE), parent=frame)
         emi_mul.blend_type='MULTIPLY'; emi_mul.inputs['Fac'].default_value=1.0
@@ -371,7 +371,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       place(cc_val_node, layer_x, COL_COAT, frame, label=f'Coat Factor {clearCoatFactor:.2f}')
       cc_val = cc_val_node.outputs[0]
       if cc_path:
-        cc_img = connect_img(nt, cc_path, level_dir, 'Non-Color', cc_uv2, uv2_name, uv1_name, label=f'ClearCoat L{idx}')
+        cc_img = connect_img(nt, cc_path, level_dir, 'Non-Color', cc_uv2, uv2_name, uv1_name, label=f'ClearCoat L{idx}', mat_dir=mat_dir)
         place(cc_img, layer_x-220, COL_COAT, frame)
         sep, rname = make_separate_r(nt); place(sep, layer_x+160, COL_COAT, frame, label='Coat R')
         link(links, cc_img.outputs['Color'], sep.inputs[0])
@@ -388,7 +388,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None):
       place(ccr_val_node, layer_x, COL_COAT-100, frame, label=f'Coat Rough {clearCoatRoughnessFactor:.2f}')
       ccr_val = ccr_val_node.outputs[0]
       if ccr_path:
-        ccr_img = connect_img(nt, ccr_path, level_dir, 'Non-Color', ccr_uv2, uv2_name, uv1_name, label=f'ClearCoatRou L{idx}')
+        ccr_img = connect_img(nt, ccr_path, level_dir, 'Non-Color', ccr_uv2, uv2_name, uv1_name, label=f'ClearCoatRou L{idx}', mat_dir=mat_dir)
         place(ccr_img, layer_x-220, COL_COAT-100, frame)
         sep, rname = make_separate_r(nt); place(sep, layer_x+160, COL_COAT-100, frame, label='CoatRough R')
         link(links, ccr_img.outputs['Color'], sep.inputs[0])

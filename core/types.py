@@ -29,3 +29,4 @@ class ImportContext:
   terrain_mats: List[str]
   decal_defs: Dict[str, Dict]
   decal_instances: Dict[str, List[List[float]]]
+  material_pack_dirs: Dict[int, Path]

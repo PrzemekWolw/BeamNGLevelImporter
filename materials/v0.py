@@ -71,7 +71,7 @@ def layer_has_meaning(layer):
   if layer.get('vertColor', False) or layer.get('vtxColorToBaseColor', False): return True
   return False
 
-def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
+def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None, mat_dir: Path | None = None):
   if not mat_name or not isinstance(matdef, dict):
     return
   mat = bpy.data.materials.get(mat_name) or bpy.data.materials.new(mat_name)
@@ -157,7 +157,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     this_color = bc_factor.outputs['Color']
 
     if bc_path:
-      bc_img = connect_img(nt, bc_path, level_dir, 'sRGB', bc_uv2, uv2_name, uv1_name, label=f'Diffuse L{idx}')
+      bc_img = connect_img(nt, bc_path, level_dir, 'sRGB', bc_uv2, uv2_name, uv1_name, label=f'Diffuse L{idx}', mat_dir=mat_dir)
       place(bc_img, layer_x-220, COL_BASE, frame)
       mul = new_node(nt, 'ShaderNodeMixRGB', label='Base * Diffuse', loc=(layer_x+180, COL_BASE), parent=frame)
       mul.blend_type='MULTIPLY'; mul.inputs['Fac'].default_value=1.0
@@ -166,7 +166,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       this_color = mul.outputs['Color']
 
     if pal_path:
-      pal_img = connect_img(nt, pal_path, level_dir, 'sRGB', pal_uv2, uv2_name, uv1_name, label=f'Palette L{idx}')
+      pal_img = connect_img(nt, pal_path, level_dir, 'sRGB', pal_uv2, uv2_name, uv1_name, label=f'Palette L{idx}', mat_dir=mat_dir)
       place(pal_img, layer_x-220, COL_BASE-60, frame)
       pal_mul = new_node(nt, 'ShaderNodeMixRGB', label='Base * Palette', loc=(layer_x+180, COL_BASE-60), parent=frame)
       pal_mul.blend_type='MULTIPLY'; pal_mul.inputs['Fac'].default_value=1.0
@@ -175,7 +175,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       this_color = pal_mul.outputs['Color']
 
     if overlay:
-      ov_img = connect_img(nt, overlay, level_dir, 'sRGB', ov_uv2, uv2_name, uv1_name, label=f'Overlay L{idx}')
+      ov_img = connect_img(nt, overlay, level_dir, 'sRGB', ov_uv2, uv2_name, uv1_name, label=f'Overlay L{idx}', mat_dir=mat_dir)
       place(ov_img, layer_x-220, COL_BASE-120, frame)
       mix = new_node(nt, 'ShaderNodeMixRGB', label='Overlay Mix', loc=(layer_x+180, COL_BASE-120), parent=frame)
       mix.blend_type='MIX'
@@ -197,7 +197,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       this_color = mul2.outputs['Color']
 
     if detail and abs(detailBaseFac) > 1e-6:
-      det_img = connect_img(nt, detail, level_dir, 'sRGB', det_uv2, uv2_name, uv1_name, label=f'DetailCol L{idx}', scale=detScale)
+      det_img = connect_img(nt, detail, level_dir, 'sRGB', det_uv2, uv2_name, uv1_name, label=f'DetailCol L{idx}', scale=detScale, mat_dir=mat_dir)
       place(det_img, layer_x-220, COL_BASE-300, frame)
       scale2 = new_node(nt, 'ShaderNodeVectorMath', label='Detail * 2', loc=(layer_x, COL_BASE-300), parent=frame)
       scale2.operation='MULTIPLY'
@@ -228,7 +228,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     layer_opacity_val = value_node(nt, opacityFactor, f'Opacity L{idx}')
     place(layer_opacity_val, layer_x, COL_ALPHA, frame, label=f'Opacity Fac {opacityFactor:.2f}')
     if op_path:
-      op_img = connect_img(nt, op_path, level_dir, 'Non-Color', op_uv2, uv2_name, uv1_name, label=f'Opacity L{idx}')
+      op_img = connect_img(nt, op_path, level_dir, 'Non-Color', op_uv2, uv2_name, uv1_name, label=f'Opacity L{idx}', mat_dir=mat_dir)
       place(op_img, layer_x-220, COL_ALPHA, frame)
       sep, rname = make_separate_r(nt); place(sep, layer_x, COL_ALPHA-60, frame, label='Opacity R')
       link(links, op_img.outputs['Color'], sep.inputs[0])
@@ -278,7 +278,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
     alpha_prev = add_alpha.outputs['Value']
 
     if spec_path:
-      sp_img = connect_img(nt, spec_path, level_dir, 'Non-Color', sp_uv2, uv2_name, uv1_name, label=f'Specular L{idx}')
+      sp_img = connect_img(nt, spec_path, level_dir, 'Non-Color', sp_uv2, uv2_name, uv1_name, label=f'Specular L{idx}', mat_dir=mat_dir)
       place(sp_img, layer_x-220, COL_SPEC, frame)
       sep_sp, rname_sp = make_separate_r(nt); place(sep_sp, layer_x, COL_SPEC, frame, label='Spec R')
       link(links, sp_img.outputs['Color'], sep_sp.inputs[0])
@@ -307,7 +307,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
         pass
 
     if refl_path:
-      rf_img = connect_img(nt, refl_path, level_dir, 'Non-Color', rf_uv2, uv2_name, uv1_name, label=f'Reflectivity L{idx}')
+      rf_img = connect_img(nt, refl_path, level_dir, 'Non-Color', rf_uv2, uv2_name, uv1_name, label=f'Reflectivity L{idx}', mat_dir=mat_dir)
       place(rf_img, layer_x-220, COL_REFL, frame)
       rf_bw = new_node(nt, 'ShaderNodeRGBToBW', label='Reflectivity BW', loc=(layer_x+0, COL_REFL), parent=frame)
       rf_bw.parent = frame; rf_bw.location = (layer_x+0, COL_REFL)
@@ -324,7 +324,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
 
     base_normal = None
     if nor_path:
-      nor_img = connect_img(nt, nor_path, level_dir, 'Non-Color', nor_uv2, uv2_name, uv1_name, label=f'Normal L{idx}')
+      nor_img = connect_img(nt, nor_path, level_dir, 'Non-Color', nor_uv2, uv2_name, uv1_name, label=f'Normal L{idx}', mat_dir=mat_dir)
       place(nor_img, layer_x-220, COL_NORMAL, frame)
       nrm_base = new_node(nt, 'ShaderNodeNormalMap', label=f'Normal (str {normalStrength:.2f})', loc=(layer_x, COL_NORMAL), parent=frame)
       nrm_base.inputs['Strength'].default_value = float(normalStrength)
@@ -332,7 +332,7 @@ def build_pbr_v0_material(mat_name: str, matdef: dict, level_dir: Path|None):
       base_normal = nrm_base.outputs['Normal']
 
     if det_nrm and abs(detailNormFac) > 1e-6:
-      det_img = connect_img(nt, det_nrm, level_dir, 'Non-Color', detn_uv2, uv2_name, uv1_name, label=f'DetailNorm L{idx}', scale=detScale)
+      det_img = connect_img(nt, det_nrm, level_dir, 'Non-Color', detn_uv2, uv2_name, uv1_name, label=f'DetailNorm L{idx}', scale=detScale, mat_dir=mat_dir)
       place(det_img, layer_x-220, COL_DNORM, frame)
       nrm_det = new_node(nt, 'ShaderNodeNormalMap', label=f'Detail Normal (str {detailNormFac:.2f})', loc=(layer_x, COL_DNORM), parent=frame)
       nrm_det.inputs['Strength'].default_value = float(detailNormFac)

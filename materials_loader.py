@@ -26,7 +26,7 @@ def _strip_numeric_suffix(name: str) -> str:
   return name
 
 
-def _build_material_from_def(v: dict, level_dir: Path) -> str | None:
+def _build_material_from_def(v: dict, level_dir: Path, mat_dir: Path | None) -> str | None:
   if not isinstance(v, dict):
     return None
 
@@ -40,9 +40,9 @@ def _build_material_from_def(v: dict, level_dir: Path) -> str | None:
       return None
 
     if map_to and version == 1.5:
-      build_pbr_v15_material(name, v, level_dir)
+      build_pbr_v15_material(name, v, level_dir, mat_dir=mat_dir)
     elif map_to and (version == 0 or not version):
-      build_pbr_v0_material(name, v, level_dir)
+      build_pbr_v0_material(name, v, level_dir, mat_dir=mat_dir)
     else:
       # Fallback choice
       if version == 1.5:
@@ -58,9 +58,9 @@ def _build_material_from_def(v: dict, level_dir: Path) -> str | None:
       "normalBaseTex", "roughnessBaseTex", "aoBaseTex"
     )
     if any(k in v for k in keys_v15):
-      build_terrain_material_v15(level_dir, v, terrain_mats=[], terrain_world_size=None)
+      build_terrain_material_v15(level_dir, v, terrain_mats=[], terrain_world_size=None, mat_dir=mat_dir)
     else:
-      build_terrain_material_v0(level_dir, v, terrain_mats=[], terrain_world_size=None)
+      build_terrain_material_v0(level_dir, v, terrain_mats=[], terrain_world_size=None, mat_dir=mat_dir)
     return v.get("internalName") or v.get("name")
 
   return None
@@ -120,12 +120,12 @@ class BeamNG_OT_LoadReplaceMaterials(Operator):
 
     # Gather packs
     try:
-      packs = scan_material_json_packs(root) + scan_material_cs_packs(root)
+      packs_with_dirs = scan_material_json_packs(root) + scan_material_cs_packs(root)
     except Exception as e:
       self.report({'ERROR'}, f"Failed to scan materials: {e}")
       return {'CANCELLED'}
 
-    if not packs:
+    if not packs_with_dirs:
       self.report({'WARNING'}, "No material packs found in the selected folder")
       return {'FINISHED'}
 
@@ -133,7 +133,7 @@ class BeamNG_OT_LoadReplaceMaterials(Operator):
     total_defs = 0
     built_defs = 0
 
-    for pack in packs:
+    for pack, mat_dir in packs_with_dirs:
       if not isinstance(pack, dict):
         continue
       for _, v in pack.items():
@@ -143,7 +143,7 @@ class BeamNG_OT_LoadReplaceMaterials(Operator):
         if v.get("class") == "TerrainMaterial" and not props.include_terrain:
           continue
         try:
-          name = _build_material_from_def(v, root)
+          name = _build_material_from_def(v, root, mat_dir)
           if name:
             created_names.add(name)
             built_defs += 1

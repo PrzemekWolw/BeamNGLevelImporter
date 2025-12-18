@@ -88,7 +88,9 @@ def import_level(scene, props, operator=None):
   level_data  = load_main_records(level_path)
   forest_data = load_forest_records(level_path)
   terrain_meta = load_terrain_meta(level_path)
-  materials_packs = scan_material_json_packs(level_path) + scan_material_cs_packs(level_path)
+  packs_with_dirs = scan_material_json_packs(level_path) + scan_material_cs_packs(level_path)
+  materials_packs = [p for (p, _d) in packs_with_dirs]
+  material_pack_dirs = {id(p): d for (p, d) in packs_with_dirs}
   forest_items = load_forest_item_db(level_path)
   forest_names = {}
   shapes = []
@@ -217,7 +219,8 @@ def import_level(scene, props, operator=None):
     shapes=shapes,
     terrain_mats=terrain_mats,
     decal_defs=decals_defs,
-    decal_instances=decal_instances
+    decal_instances=decal_instances,
+    material_pack_dirs=material_pack_dirs,
   )
 
   # Terrain material mode and world size
@@ -260,35 +263,35 @@ def import_level(scene, props, operator=None):
     for pack in ctx.materials_packs:
       if not isinstance(pack, dict):
         continue
+      mat_dir = ctx.material_pack_dirs.get(id(pack))
       for _, v in pack.items():
         if not isinstance(v, dict):
           continue
         if v.get('class') == "TerrainMaterial":
           if use_v15_terrain:
-            build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+            build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=mat_dir)
           else:
-            build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+            build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=mat_dir)
         elif v.get('mapTo') and v.get('version') == 1.5:
           name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
-          build_pbr_v15_material(name, v, ctx.config.level_path)
+          build_pbr_v15_material(name, v, ctx.config.level_path, mat_dir=mat_dir)
         elif v.get('mapTo') and (v.get('version') == 0 or not v.get('version')):
           name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
-          build_pbr_v0_material(name, v, ctx.config.level_path)
+          build_pbr_v0_material(name, v, ctx.config.level_path, mat_dir=mat_dir)
         ctx.progress.update(step=1)
 
     # 2) Extra materials from all /art providers (skip existing)
     assets_idx = last_assets()
     if assets_idx and assets_idx.art:
-      extra_packs: list[dict] = []
-      # Gather packs
+      extra_packs_with_dirs: list[tuple[dict, Path]] = []
       for prov in assets_idx.art:
         if prov.dir_root and prov.dir_root.exists():
-          extra_packs.extend(scan_material_json_packs(prov.dir_root))
-          extra_packs.extend(scan_material_cs_packs(prov.dir_root))
+          extra_packs_with_dirs.extend(scan_material_json_packs(prov.dir_root))
+          extra_packs_with_dirs.extend(scan_material_cs_packs(prov.dir_root))
         elif prov.zip_path and prov.zip_path.exists():
-          extra_packs.extend(scan_material_packs_in_zip(prov.zip_path))
+          extra_packs_with_dirs.extend(scan_material_packs_in_zip(prov.zip_path))
       # Build only missing materials
-      for pack in extra_packs:
+      for pack, pack_dir in extra_packs_with_dirs:
         if not isinstance(pack, dict):
           continue
         for _, v in pack.items():
@@ -300,19 +303,17 @@ def import_level(scene, props, operator=None):
             if nm and bpy.data.materials.get(nm):
               continue
             if use_v15_terrain:
-              build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+              build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=pack_dir)
             else:
-              build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size)
+              build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=pack_dir)
           elif cls == "Material" or (v.get('mapTo') and (v.get('version') in (None, 0, 1.5))):
             name = v.get('mapTo') if v.get('mapTo') not in (None, 'unmapped_mat') else v.get('name')
-            if not name:
-              continue
-            if bpy.data.materials.get(name):
+            if not name or bpy.data.materials.get(name):
               continue
             if v.get('version') == 1.5:
-              build_pbr_v15_material(name, v, ctx.config.level_path)
+              build_pbr_v15_material(name, v, ctx.config.level_path, mat_dir=pack_dir)
             else:
-              build_pbr_v0_material(name, v, ctx.config.level_path)
+              build_pbr_v0_material(name, v, ctx.config.level_path, mat_dir=pack_dir)
         ctx.progress.update(step=1)
 
     # Shapes
