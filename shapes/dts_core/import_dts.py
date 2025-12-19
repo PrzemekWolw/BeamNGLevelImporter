@@ -29,7 +29,7 @@ def read_dts_file(file, filepath, merge_verts: bool = True):
   C._create_scene_from_shape(shape, merge_verts=merge_verts)
 
 def load_dts(filepath, context, merge_verts: bool = True):
-  print("importing DTS: %r..." % (filepath))
+  print("Importing DTS: %r..." % (filepath))
   t0 = time.perf_counter()
   with open(filepath, "rb"):
     pass

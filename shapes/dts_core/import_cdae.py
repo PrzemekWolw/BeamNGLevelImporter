@@ -491,7 +491,7 @@ def _read_cdae_shape(filepath: str) -> TSShape:
   return shape
 
 def load_cdae(filepath, context, merge_verts: bool = True):
-  print("importing CDAE: %r..." % (filepath))
+  print("Importing CDAE: %r..." % (filepath))
   t0 = time.perf_counter()
   shape = _read_cdae_shape(filepath)
   C._create_scene_from_shape(shape, merge_verts=merge_verts)

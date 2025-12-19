@@ -10,6 +10,7 @@ import mathutils
 import xml.etree.ElementTree as ET
 from math import pi
 import numpy as np
+import time
 
 from . import collada_util as U
 from .collada_reader import SourceReader
@@ -24,9 +25,9 @@ from .collada_materials import (
 from .collada_normals import apply_custom_normals
 
 def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node_scale=False):
+  t0 = time.perf_counter()
   U._SOURCE_FLOAT_CACHE.clear()
   U._INPUT_SR_CACHE.clear()
-
   tree = ET.parse(path)
   root = tree.getroot()
   created_objs = []
@@ -781,4 +782,9 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
   except Exception:
     pass
 
+  dt = time.perf_counter() - t0
+  try:
+    print(f"Importing Collada: {path!r} done in {dt:.4f} sec.")
+  except Exception:
+    pass
   return created_objs

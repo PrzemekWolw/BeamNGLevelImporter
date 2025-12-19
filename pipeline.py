@@ -8,6 +8,7 @@
 from __future__ import annotations
 import bpy
 import os
+import time
 from pathlib import Path
 
 from .core.types import ImportConfig, ImportContext
@@ -56,7 +57,12 @@ def _set_view_clip_planes(clip_start=0.1, clip_end=50000.0):
     pass
 
 def import_level(scene, props, operator=None):
+  def _elapsed(start):
+    return time.perf_counter() - start
   def info(msg): _info(operator, msg)
+
+  overall_start = time.perf_counter()
+
   temp_path = Path(bpy.app.tempdir or ".").resolve()
   level_path: Path | None = None
 
@@ -103,6 +109,8 @@ def import_level(scene, props, operator=None):
   if not level_path or not level_path.exists():
     raise RuntimeError("Level path not set or not found")
 
+  load_start = time.perf_counter()
+
   level_data  = load_main_records(level_path)
   forest_data = load_forest_records(level_path)
   terrain_meta = load_terrain_meta(level_path)
@@ -114,6 +122,17 @@ def import_level(scene, props, operator=None):
   shapes = []
   terrain_mats = []
   decals_defs, decal_instances = load_decal_sets(level_path)
+
+  info(
+    f"Loaded main: {len(level_data)} records, "
+    f"forest: {len(forest_data)} items, "
+    f"terrain meta: {len(terrain_meta)} entries, "
+    f"materials files: {len(materials_packs)}, "
+    f"forest item DB: {len(forest_items)}, "
+    f"decal defs: {len(decals_defs)}, "
+    f"decal instances: {sum(len(v) for v in decal_instances.values()) if decal_instances else 0} "
+    f"(in {_elapsed(load_start):.2f}s)"
+  )
 
   def _offset_nodes(nodes, dpos):
     if not isinstance(nodes, list):
@@ -194,10 +213,18 @@ def import_level(scene, props, operator=None):
         level_data.remove(r)
       except ValueError:
         pass
+    info(
+      f"Expanded prefabs: {len(prefab_roots)} roots, "
+      f"{len(prefabs_expanded)} objects (remaining level records: {len(level_data)})"
+    )
 
   # Normalize
   normalize_records(level_data)
   normalize_forest(forest_data)
+  norm_start = time.perf_counter()
+  normalize_records(level_data)
+  normalize_forest(forest_data)
+  info(f"Normalized {len(level_data)} level records and {len(forest_data)} forest items in {_elapsed(norm_start):.2f}s")
 
   # Ensure collections for SimGroups
   for i in level_data:
@@ -241,6 +268,11 @@ def import_level(scene, props, operator=None):
     material_pack_dirs=material_pack_dirs,
   )
 
+  info(
+    f"Collected shapes: {len(shapes)} unique shape paths "
+    f"(from TSStatic + forest item DB)"
+  )
+
   # Terrain material mode and world size
   texture_sets = {}
   for pack in ctx.materials_packs:
@@ -275,8 +307,20 @@ def import_level(scene, props, operator=None):
   materials_count = sum(len(p) for p in ctx.materials_packs if isinstance(p, dict))
   total_steps = max(1, len(shapes)) + max(1, len(level_data)) + max(1, len(forest_data)) + max(1, materials_count) + 10
 
+  materials_count = sum(len(p) for p in ctx.materials_packs if isinstance(p, dict))
+  info(
+    f"Terrain materials: {'v1.5' if use_v15_terrain else 'v0'}, "
+    f"Terrain world size: {terrain_world_size if terrain_world_size is not None else 'unknown'}, "
+    f"Material in level data: {materials_count}"
+  )
+
   try:
     ctx.progress.begin(total_steps, "BeamNG: preparing import...")
+
+    mats_start = time.perf_counter()
+    built_terrain = 0
+    built_pbr = 0
+
 
     for pack in ctx.materials_packs:
       if not isinstance(pack, dict):
@@ -290,13 +334,26 @@ def import_level(scene, props, operator=None):
             build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=mat_dir)
           else:
             build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=mat_dir)
+          built_terrain += 1
         elif v.get('mapTo') and v.get('version') == 1.5:
           name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
           build_pbr_v15_material(name, v, ctx.config.level_path, mat_dir=mat_dir)
+          built_pbr += 1
         elif v.get('mapTo') and (v.get('version') == 0 or not v.get('version')):
           name = v['mapTo'] if v['mapTo'] != 'unmapped_mat' else v.get('name')
           build_pbr_v0_material(name, v, ctx.config.level_path, mat_dir=mat_dir)
+          built_pbr += 1
         ctx.progress.update(step=1)
+
+    info(
+      f"Built materials from level data: "
+      f"{built_pbr} PBR, {built_terrain} terrain in {_elapsed(mats_start):.2f}s"
+    )
+
+    extra_mats_start = time.perf_counter()
+    extra_pbr = 0
+    extra_terrain = 0
+    extra_scanned_packs = 0
 
     # 2) Extra materials from all /art providers (skip existing)
     assets_idx = last_assets()
@@ -308,6 +365,7 @@ def import_level(scene, props, operator=None):
           extra_packs_with_dirs.extend(scan_material_cs_packs(prov.dir_root))
         elif prov.zip_path and prov.zip_path.exists():
           extra_packs_with_dirs.extend(scan_material_packs_in_zip(prov.zip_path))
+      extra_scanned_packs = len(extra_packs_with_dirs)
       # Build only missing materials
       for pack, pack_dir in extra_packs_with_dirs:
         if not isinstance(pack, dict):
@@ -324,6 +382,7 @@ def import_level(scene, props, operator=None):
               build_terrain_material_v15(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=pack_dir)
             else:
               build_terrain_material_v0(ctx.config.level_path, v, ctx.terrain_mats, terrain_world_size=terrain_world_size, mat_dir=pack_dir)
+            extra_terrain += 1
           elif cls == "Material" or (v.get('mapTo') and (v.get('version') in (None, 0, 1.5))):
             name = v.get('mapTo') if v.get('mapTo') not in (None, 'unmapped_mat') else v.get('name')
             if not name or bpy.data.materials.get(name):
@@ -332,9 +391,18 @@ def import_level(scene, props, operator=None):
               build_pbr_v15_material(name, v, ctx.config.level_path, mat_dir=pack_dir)
             else:
               build_pbr_v0_material(name, v, ctx.config.level_path, mat_dir=pack_dir)
+            extra_pbr += 1
         ctx.progress.update(step=1)
 
+    if extra_scanned_packs:
+      info(
+        f"Common /art data: scanned {extra_scanned_packs} data, "
+        f"built {extra_pbr} common PBR and {extra_terrain} common terrain materials "
+        f"in {_elapsed(extra_mats_start):.2f}s"
+      )
+
     # Shapes
+    shapes_start = time.perf_counter()
     import_collada_shapes(ctx)
 
     for shp in ctx.shapes:
@@ -344,6 +412,10 @@ def import_level(scene, props, operator=None):
       obj = import_dts_shape(shp, ctx.config.level_path)
       if not obj:
         print(f"WARN: No importer found for shape: {shp}")
+    info(
+      f"Imported shapes: {len(ctx.shapes)} "
+      f"in {_elapsed(shapes_start):.2f}s"
+    )
 
     for obj in bpy.data.objects:
       if obj.type == 'MESH' and obj.data:
@@ -352,6 +424,7 @@ def import_level(scene, props, operator=None):
       delete_object_if_exists(d)
     dedupe_materials()
 
+    mission_start = time.perf_counter()
     for i in ctx.level_data:
       if i.get('class') == 'SimGroup':
         name = i.get('name')
@@ -390,11 +463,19 @@ def import_level(scene, props, operator=None):
               pass
 
     build_mission_objects(ctx)
-    build_forest_objects(ctx)
+    info(f"Built mission objects in {_elapsed(mission_start):.2f}s")
 
+    forest_start = time.perf_counter()
+    build_forest_objects(ctx)
+    info(f"Built forest instances in {_elapsed(forest_start):.2f}s")
+
+    decals_start = time.perf_counter()
     build_decal_objects(ctx)
+    info(f"Built decals in {_elapsed(decals_start):.2f}s")
     _set_view_clip_planes(clip_start=1.0, clip_end=10000.0)
     force_redraw()
+    total_time = _elapsed(overall_start)
+    info(f"BeamNG import finished in {total_time:.2f}s")
     info("BeamNG Import finished")
   finally:
     ctx.progress.end()
