@@ -106,8 +106,14 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     return max_idx < (usable // stride)
 
   def ensure_armature(name):
-    arm = bpy.data.armatures.new(name + "_Armature")
-    arm_obj = bpy.data.objects.new(name + "_ArmatureObj", arm)
+    base = name or "Armature"
+    existing_arms = {a.name for a in bpy.data.armatures}
+    arm_name = U.make_valid_name(base + "_Armature", existing=existing_arms)
+    arm = bpy.data.armatures.new(arm_name)
+
+    existing_objs = {o.name for o in bpy.data.objects}
+    arm_obj_name = U.make_valid_name(base + "_ArmatureObj", existing=existing_objs)
+    arm_obj = bpy.data.objects.new(arm_obj_name, arm)
     collection.objects.link(arm_obj)
     return arm, arm_obj
 
@@ -146,7 +152,7 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
 
     return None
 
-  def build_geometry_for_mesh(mesh, inst_like, world, invert_geom):
+  def build_geometry_for_mesh(geom_el, mesh, inst_like, world, invert_geom, obj_name_hint=None):
     mesh_index = build_mesh_index(mesh)
     prims = [p for p in mesh if U.tag_name(p) in ('triangles', 'tristrips', 'trifans', 'polylist', 'polygons')]
     if not prims:
@@ -250,16 +256,27 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
 
       def gather3(arr, idx, stride, o0, o1, o2, accessor_offset=0):
         base = accessor_offset + (idx.astype(np.int64, copy=False) * stride)
-        return np.stack([arr[base + o0], arr[base + o1], arr[base + o2]], axis=1).astype(np.float32, copy=False)
+        return np.stack([
+          arr[base + o0],
+          arr[base + o1],
+          arr[base + o2]
+        ], axis=1).astype(np.float32, copy=False)
 
       def gather2(arr, idx, stride, o0, o1, accessor_offset=0):
         base = accessor_offset + (idx.astype(np.int64, copy=False) * stride)
-        return np.stack([arr[base + o0], arr[base + o1]], axis=1).astype(np.float32, copy=False)
+        return np.stack([
+          arr[base + o0],
+          arr[base + o1]
+        ], axis=1).astype(np.float32, copy=False)
 
       loop_n = None
       if ni is not None and nor_arr.size > 0 and sr_nor:
         no = sr_nor.offsets or [0, 1, 2]
-        loop_n = gather3(nor_arr, ni, nor_stride, U.comp(no, 0, 0), U.comp(no, 1, 1), U.comp(no, 2, 2), sr_nor.accessor_offset)
+        loop_n = gather3(
+          nor_arr, ni, nor_stride,
+          U.comp(no, 0, 0), U.comp(no, 1, 1), U.comp(no, 2, 2),
+          sr_nor.accessor_offset
+        )
         norms = np.linalg.norm(loop_n, axis=1, keepdims=True)
         norms[norms < 1e-8] = 1.0
         loop_n = loop_n / norms
@@ -279,12 +296,20 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       loop_u0 = None
       if u0i is not None and uv0_arr.size and sr_uv0:
         uo = sr_uv0.offsets or [0, 1]
-        loop_u0 = gather2(uv0_arr, u0i, uv0_stride, U.comp(uo, 0, 0), U.comp(uo, 1, 1), sr_uv0.accessor_offset)
+        loop_u0 = gather2(
+          uv0_arr, u0i, uv0_stride,
+          U.comp(uo, 0, 0), U.comp(uo, 1, 1),
+          sr_uv0.accessor_offset
+        )
 
       loop_u1 = None
       if u1i is not None and uv1_arr.size and sr_uv1:
         uo1 = sr_uv1.offsets or [0, 1]
-        loop_u1 = gather2(uv1_arr, u1i, uv1_stride, U.comp(uo1, 0, 0), U.comp(uo1, 1, 1), sr_uv1.accessor_offset)
+        loop_u1 = gather2(
+          uv1_arr, u1i, uv1_stride,
+          U.comp(uo1, 0, 0), U.comp(uo1, 1, 1),
+          sr_uv1.accessor_offset
+        )
 
       uv0_list.append(loop_u0)
       uv1_list.append(loop_u1)
@@ -355,7 +380,16 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         axis=0
       ).astype(np.float32, copy=False)
 
-    me = bpy.data.meshes.new(mesh.get('name') or mesh.get('id') or 'Mesh')
+    geom_name = (
+      geom_el.get('name') or
+      geom_el.get('id') or
+      mesh.get('name') or
+      mesh.get('id') or
+      'Mesh'
+    )
+    existing_meshes = {m.name for m in bpy.data.meshes}
+    mesh_name = U.make_valid_name(geom_name, existing=existing_meshes)
+    me = bpy.data.meshes.new(mesh_name)
     me.vertices.add(verts_np.shape[0])
     me.vertices.foreach_set("co", verts_np.ravel(order='C'))
     me.loops.add(nloops)
@@ -425,7 +459,15 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       pass
     me.update(calc_edges=True)
 
-    obj = bpy.data.objects.new(me.name, me)
+    inst_name = (
+      (inst_like.get('name') or inst_like.get('sid') or inst_like.get('symbol') or '').strip()
+      if hasattr(inst_like, 'get') else ''
+    )
+    obj_base = inst_name or geom_name or mesh_name
+
+    existing_objs = {o.name for o in bpy.data.objects}
+    obj_name = U.make_valid_name(obj_base, existing=existing_objs)
+    obj = bpy.data.objects.new(obj_name, me)
     obj.matrix_world = world
     collection.objects.link(obj)
 
@@ -456,10 +498,13 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       return
 
     invert_geom = False
-    obj, pi_per_loop, use_shared = build_geometry_for_mesh(mesh, inst_ctrl, parent_world, invert_geom)
+    ctrl_name = ctrl_el.get('name') or ctrl_el.get('id') or 'Skin'
+    obj, pi_per_loop, use_shared = build_geometry_for_mesh(
+      geom, mesh, inst_ctrl, parent_world, invert_geom,
+      obj_name_hint=ctrl_name
+    )
     if obj is None:
       return
-
     me = obj.data
 
     joints_el = skin.find('{*}joints')
@@ -496,7 +541,6 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     arm, arm_obj = ensure_armature(obj.name)
     arm_obj.matrix_world = mathutils.Matrix.Identity(4)
     bpy.context.view_layer.update()
-
     bpy.context.view_layer.objects.active = arm_obj
     bpy.ops.object.mode_set(mode='EDIT')
     joint_count = sr_joint_names.size()
@@ -514,7 +558,6 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       eb.head = head
       eb.tail = tail
     bpy.ops.object.mode_set(mode='OBJECT')
-
     obj.parent = arm_obj
     arm_mod = obj.modifiers.new(name="Armature", type='ARMATURE')
     arm_mod.object = arm_obj
@@ -526,7 +569,6 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
 
     vcount_arr = U.parse_ints_np(vw_el.find('{*}vcount').text, dtype=np.int64)
     v_arr = U.parse_ints_np(vw_el.find('{*}v').text, dtype=np.int64)
-
     inputs = vw_el.findall('{*}input')
     offs = {}
     max_off = 0
@@ -580,9 +622,12 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     base_mesh = base_geom.find('{*}mesh')
     if base_mesh is None:
       return
-
     invert_geom = False
-    base_obj, pi_per_loop, use_shared = build_geometry_for_mesh(base_mesh, inst_ctrl, parent_world, invert_geom)
+    ctrl_name = ctrl_el.get('name') or ctrl_el.get('id') or 'Morph'
+    base_obj, pi_per_loop, use_shared = build_geometry_for_mesh(
+      base_geom, base_mesh, inst_ctrl, parent_world, invert_geom,
+      obj_name_hint=ctrl_name
+    )
     if base_obj is None:
       return
     me = base_obj.data
@@ -642,7 +687,10 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       tz = tarr[base + U.comp(o, 2, 2)]
       tpos = np.stack([tx, ty, tz], axis=1).astype(np.float32, copy=False)
 
-      key = base_obj.shape_key_add(name=f"Target_{i}", from_mix=False)
+      tname_raw = tgeom.get('name') or tgeom.get('id') or f"Target_{i}"
+      existing_sk = {k.name for k in (me.shape_keys.key_blocks or [])}
+      sk_name = U.make_valid_name(tname_raw, existing=existing_sk)
+      key = base_obj.shape_key_add(name=sk_name, from_mix=False)
       co = np.zeros((len(me.vertices), 3), dtype=np.float32)
       if use_shared and len(me.vertices) <= tpos.shape[0]:
         co[:len(me.vertices), :] = tpos[:len(me.vertices), :]
@@ -653,16 +701,34 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         co = np.resize(co, (len(me.vertices), 3))
       key.data.foreach_set("co", co.ravel(order='C'))
 
-  def process_node(dom_node, parent_world):
+  def process_node(dom_node, parent_world, parent_obj=None):
     tx_elems = [c for c in dom_node if U.tag_name(c) in ('translate', 'rotate', 'scale', 'matrix', 'skew', 'lookat')]
     local = node_local_matrix(tx_elems)
     world = parent_world @ local
-
     invert_geom = (U.mat_det(world) < 0.0)
     if invert_geom:
       world = world @ mathutils.Matrix.Scale(-1.0, 4, (0, 0, 1))
 
-    for inst in dom_node.findall('{*}instance_geometry'):
+    inst_geoms = list(dom_node.findall('{*}instance_geometry'))
+    inst_ctrls = list(dom_node.findall('{*}instance_controller'))
+
+    this_parent_obj = parent_obj
+    if not inst_geoms and not inst_ctrls:
+      has_children = bool(dom_node.findall('{*}node') or dom_node.findall('{*}instance_node'))
+      if has_children or tx_elems:
+        nid = dom_node.get('id') or ''
+        nname = dom_node.get('name') or nid or 'Empty'
+        existing_objs = {o.name for o in bpy.data.objects}
+        empty_name = U.make_valid_name(nname, existing=existing_objs)
+        empty = bpy.data.objects.new(empty_name, None)
+        empty.empty_display_type = 'PLAIN_AXES'
+        empty.matrix_world = world
+        collection.objects.link(empty)
+        if parent_obj:
+          empty.parent = parent_obj
+        this_parent_obj = empty
+
+    for inst in inst_geoms:
       url = inst.get('url', '')
       if url.startswith('#'):
         url = url[1:]
@@ -672,12 +738,13 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
       mesh = geom.find('{*}mesh')
       if mesh is None:
         continue
-
-      obj, _, _ = build_geometry_for_mesh(mesh, inst, world, invert_geom)
+      obj, _, _ = build_geometry_for_mesh(geom, mesh, inst, world, invert_geom)
       if obj:
+        if parent_obj:
+          obj.parent = parent_obj
         created_objs.append(obj)
 
-    for instc in dom_node.findall('{*}instance_controller'):
+    for instc in inst_ctrls:
       curl = instc.get('url') or ''
       if curl.startswith('#'):
         curl = curl[1:]
@@ -690,7 +757,7 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         process_morph_controller(ctrl, instc, world)
 
     for child in dom_node.findall('{*}node'):
-      process_node(child, world)
+      process_node(child, world, parent_obj=this_parent_obj)
 
     for instn in dom_node.findall('{*}instance_node'):
       ref = instn.get('url') or ''
@@ -698,11 +765,11 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         ref = ref[1:]
       refnode = nodes_by_id.get(ref)
       if refnode is not None:
-        process_node(refnode, world)
+        process_node(refnode, world, parent_obj=this_parent_obj)
 
   for vscene in root.findall('.//{*}visual_scene'):
     for top_node in vscene.findall('{*}node'):
-      process_node(top_node, root_parent)
+      process_node(top_node, root_parent, parent_obj=None)
 
   try:
     for o in bpy.context.selected_objects:

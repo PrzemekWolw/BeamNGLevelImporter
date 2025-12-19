@@ -5,6 +5,7 @@
 #
 # ##### END LICENSE BLOCK #####
 
+import re
 import numpy as np
 
 _SOURCE_FLOAT_CACHE = {}
@@ -34,3 +35,29 @@ def comp(offsets, i, default_idx):
   if i < 0 or i >= len(offsets):
     return default_idx
   return offsets[i] if offsets[i] is not None else default_idx
+
+def make_valid_name(base, existing=None, maxlen=63):
+  """
+  Make a reasonably safe, short name from an arbitrary string.
+  Uniqueness is up to the caller via the 'existing' set.
+  """
+  if not base:
+    base = "Unnamed"
+  base = str(base).strip()
+  base = re.sub(r'[\r\n\t]', ' ', base)
+  base = re.sub(r'\s+', ' ', base)
+  base = base[:maxlen]
+
+  if existing is None:
+    return base
+
+  name = base
+  if name not in existing:
+    return name
+
+  i = 1
+  while True:
+    cand = f"{base}.{i:03d}"
+    if cand not in existing:
+      return cand
+    i += 1
