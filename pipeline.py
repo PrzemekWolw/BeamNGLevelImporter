@@ -327,11 +327,40 @@ def import_level(scene, props, operator=None):
 
     for i in ctx.level_data:
       if i.get('class') == 'SimGroup':
-        name = i.get('name'); parent = i.get('__parent')
-        if name and parent:
-          c = bpy.data.collections.get(name); p = bpy.data.collections.get(parent)
-          if c and p and c.name not in [ch.name for ch in p.children]:
+        name = i.get('name')
+        parent = i.get('__parent')
+        if not (name and parent):
+          continue
+
+        c = bpy.data.collections.get(name)
+        p = bpy.data.collections.get(parent)
+        if not (c and p):
+          continue
+
+        if name not in p.children:
+          try:
             p.children.link(c)
+          except RuntimeError:
+            pass
+
+        for other in bpy.data.collections:
+          if other is p:
+            continue
+          if name in other.children:
+            try:
+              other.children.unlink(c)
+            except RuntimeError:
+              pass
+
+        for scene in bpy.data.scenes:
+          root = scene.collection
+          if root is p:
+            continue
+          if name in root.children:
+            try:
+              root.children.unlink(c)
+            except RuntimeError:
+              pass
 
     build_mission_objects(ctx)
     build_forest_objects(ctx)

@@ -22,6 +22,10 @@ def link_object_to_collection(obj, coll_name_or_coll):
   else:
     coll = coll_name_or_coll
   target = coll or bpy.context.scene.collection
+  if target in obj.users_collection:
+    return
+  for old_col in obj.users_collection[:]:
+    old_col.objects.unlink(obj)
   try:
     target.objects.link(obj)
   except RuntimeError:
