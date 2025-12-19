@@ -58,17 +58,31 @@ def get_unit_cube_mesh():
   return me
 
 def fast_link(obj, coll_name_or_coll):
+
   if isinstance(coll_name_or_coll, str):
     coll = bpy.data.collections.get(coll_name_or_coll)
   else:
     coll = coll_name_or_coll
+  if coll is None:
+    target = bpy.context.scene.collection
+  else:
+    target = coll
   try:
-    if coll:
-      coll.objects.link(obj)
-    else:
+    target.objects.link(obj)
+    return
+  except ReferenceError:
+    try:
       bpy.context.scene.collection.objects.link(obj)
+      return
+    except Exception:
+      pass
   except RuntimeError:
-    pass
+    return
+  except Exception:
+    try:
+      bpy.context.scene.collection.objects.link(obj)
+    except Exception:
+      pass
 
 _coll_cache = {}
 def get_parent_collection(parent_name):
