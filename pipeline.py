@@ -25,6 +25,8 @@ from .materials.v0 import build_pbr_v0_material
 from .materials.terrain_v15 import build_terrain_material_v15
 from .materials.terrain_v0 import build_terrain_material_v0
 from .shapes.collada import import_collada_shapes
+from .shapes.dts import import_dts_shape
+from .shapes.common import shape_key
 from .objects.mission import build_mission_objects
 from .objects.forest import build_forest_objects
 from .objects.decals import build_decal_objects
@@ -334,6 +336,15 @@ def import_level(scene, props, operator=None):
 
     # Shapes
     import_collada_shapes(ctx)
+
+    for shp in ctx.shapes:
+      key = shape_key(shp)
+      if bpy.data.objects.get(key):
+        continue
+      obj = import_dts_shape(shp, ctx.config.level_path)
+      if not obj:
+        print(f"WARN: No importer found for shape: {shp}")
+
     for obj in bpy.data.objects:
       if obj.type == 'MESH' and obj.data:
         ensure_uv_layers_named(obj.data, "UVMap", "UVMap2")
