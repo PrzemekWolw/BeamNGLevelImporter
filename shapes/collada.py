@@ -95,7 +95,5 @@ def import_collada_shapes(ctx):
     try:
       best.hide_set(True)
       best.hide_render = True
-      if hasattr(best, "display_type"):
-        best.display_type = 'BOUNDS'
     except Exception:
       pass
