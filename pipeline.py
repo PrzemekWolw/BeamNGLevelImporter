@@ -37,6 +37,22 @@ def _info(op, msg):
   if op: op.report({'INFO'}, msg)
   print(msg)
 
+def _set_view_clip_planes(clip_start=0.1, clip_end=50000.0):
+  try:
+    for window in bpy.context.window_manager.windows:
+      screen = window.screen
+      if not screen:
+        continue
+      for area in screen.areas:
+        if area.type != 'VIEW_3D':
+          continue
+        for space in area.spaces:
+          if space.type == 'VIEW_3D':
+            space.clip_start = float(clip_start)
+            space.clip_end = float(clip_end)
+  except Exception:
+    pass
+
 def import_level(scene, props, operator=None):
   def info(msg): _info(operator, msg)
   temp_path = Path(bpy.app.tempdir or ".").resolve()
@@ -366,7 +382,7 @@ def import_level(scene, props, operator=None):
     build_forest_objects(ctx)
 
     build_decal_objects(ctx)
-
+    _set_view_clip_planes(clip_start=1.0, clip_end=10000.0)
     force_redraw()
     info("BeamNG Import finished")
   finally:
