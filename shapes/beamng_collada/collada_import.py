@@ -764,20 +764,19 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
     inst_ctrls = list(dom_node.findall('{*}instance_controller'))
 
     this_parent_obj = parent_obj
-    if not inst_geoms and not inst_ctrls:
-      has_children = bool(dom_node.findall('{*}node') or dom_node.findall('{*}instance_node'))
-      if has_children or tx_elems:
-        nid = dom_node.get('id') or ''
-        nname = dom_node.get('name') or nid or 'Empty'
-        existing_objs = {o.name for o in bpy.data.objects}
-        empty_name = U.make_valid_name(nname, existing=existing_objs)
-        empty = bpy.data.objects.new(empty_name, None)
-        empty.empty_display_type = 'PLAIN_AXES'
-        empty.matrix_world = world
-        collection.objects.link(empty)
-        if parent_obj:
-          empty.parent = parent_obj
-        this_parent_obj = empty
+    has_children = bool(dom_node.findall('{*}node') or dom_node.findall('{*}instance_node'))
+    if tx_elems or inst_geoms or inst_ctrls or has_children:
+      nid = dom_node.get('id') or ''
+      nname = dom_node.get('name') or nid or 'Empty'
+      existing_objs = {o.name for o in bpy.data.objects}
+      empty_name = U.make_valid_name(nname, existing=existing_objs)
+      empty = bpy.data.objects.new(empty_name, None)
+      empty.empty_display_type = 'PLAIN_AXES'
+      empty.matrix_world = world
+      collection.objects.link(empty)
+      if parent_obj:
+        empty.parent = parent_obj
+      this_parent_obj = empty
 
     for inst in inst_geoms:
       url = inst.get('url', '')
@@ -791,8 +790,8 @@ def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node
         continue
       obj, _, _ = build_geometry_for_mesh(geom, mesh, inst, world, invert_geom)
       if obj:
-        if parent_obj:
-          obj.parent = parent_obj
+        if this_parent_obj:
+          obj.parent = this_parent_obj
         created_objs.append(obj)
 
     for instc in inst_ctrls:

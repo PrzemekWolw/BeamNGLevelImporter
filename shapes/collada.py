@@ -87,11 +87,18 @@ def import_collada_shapes(ctx):
     try:
       for o in imported:
         try:
+          o.select_set(False)
+        except Exception:
+          pass
+      mesh_objects = [o for o in imported if hasattr(o, "data") and isinstance(o.data, bpy.types.Mesh)]
+      for o in mesh_objects:
+        try:
           o.select_set(True)
         except Exception:
           pass
-      bpy.context.view_layer.objects.active = imported[0]
-      bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+      if mesh_objects:
+        bpy.context.view_layer.objects.active = mesh_objects[0]
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     except Exception:
       pass
     finally:
