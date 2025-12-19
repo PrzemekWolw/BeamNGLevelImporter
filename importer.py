@@ -18,7 +18,6 @@
 # - particle support
 # - export support
 # - integrate DTS importer
-# - hide base position objects in different scene
 # - procedural meshes, trackbuilder, etc
 # - import saved scene from game with vehicles
 # - try to parrallelize some tasks for better performance

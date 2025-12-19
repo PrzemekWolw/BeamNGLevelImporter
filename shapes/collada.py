@@ -92,4 +92,10 @@ def import_collada_shapes(ctx):
     except Exception:
       pass
 
-    best.location = (0.0, 0.0, -1000.0)
+    try:
+      best.hide_set(True)
+      best.hide_render = True
+      if hasattr(best, "display_type"):
+        best.display_type = 'BOUNDS'
+    except Exception:
+      pass
