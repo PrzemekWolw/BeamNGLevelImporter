@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from math import pi
 import numpy as np
 import time
+import re
 
 from . import collada_util as U
 from .collada_reader import SourceReader
@@ -24,11 +25,60 @@ from .collada_materials import (
 )
 from .collada_normals import apply_custom_normals
 
+_XML_DECL_RE = re.compile(
+    r'^(\s*<\?xml\s+)([^?]*)(\?>)',
+    re.IGNORECASE | re.DOTALL
+)
+
+def _sanitize_xml_header(text: str) -> str:
+    """
+    Fixes malformed XML declarations at the top of a COLLADA file:
+    - Replaces an empty '<?xml version="" encoding=""?>' with a valid one.
+    - Normalizes Unicode dashes in version/encoding attributes (–, —) to '-'.
+    """
+    bad = '<?xml version="" encoding=""?>'
+    stripped = text.lstrip()
+    if stripped.startswith(bad):
+        return text.replace(
+            bad,
+            '<?xml version="1.0" encoding="utf-8"?>',
+            1,
+        )
+
+    m = _XML_DECL_RE.match(text)
+    if not m:
+        return text
+
+    prefix, attrs, suffix = m.groups()
+
+    attrs_fixed = attrs.replace('–', '-').replace('—', '-')
+
+    def _fix_attr(attr_name: str, default: str) -> str:
+        pat = re.compile(
+            rf'({attr_name}\s*=\s*["\'])([^"\']*)(["\'])',
+            re.IGNORECASE
+        )
+        def repl(m2):
+            val = m2.group(2).strip()
+            if not val:
+                return f'{m2.group(1)}{default}{m2.group(3)}'
+            return m2.group(0)
+        return pat.sub(repl, attrs_fixed)
+
+    attrs_fixed = _fix_attr("version", "1.0")
+    attrs_fixed = _fix_attr("encoding", "utf-8")
+
+    fixed_decl = prefix + attrs_fixed + suffix
+    return fixed_decl + text[m.end():]
+
 def import_collada_file_to_blender(path, collection, up_axis='Z_UP', ignore_node_scale=False):
   t0 = time.perf_counter()
   U._SOURCE_FLOAT_CACHE.clear()
   U._INPUT_SR_CACHE.clear()
-  tree = ET.parse(path)
+  with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    xml_text = f.read()
+  xml_text = _sanitize_xml_header(xml_text)
+  tree = ET.ElementTree(ET.fromstring(xml_text))
   root = tree.getroot()
   created_objs = []
   unit_scale = 1.0
