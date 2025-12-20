@@ -86,3 +86,14 @@ class BeamNGLevelImporterUI(Panel):
       else:
         col.operator(importer.BeamNGLevelImporterLoader.bl_idname,
                     text="Import Level", icon='IMPORT')
+
+    # TSStatic / Forest realization tools
+    layout.separator()
+    box2 = layout.box()
+    box2.label(text="Instances")
+
+    row = box2.row(align=True)
+    row.operator("beamng.realize_tsstatic_instances", text="Realize TSStatic")
+
+    row = box2.row(align=True)
+    row.operator("beamng.realize_forest_instances", text="Realize Forest")

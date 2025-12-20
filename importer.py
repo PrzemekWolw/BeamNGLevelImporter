@@ -17,11 +17,8 @@
 # - light support, sync light energy properly
 # - particle support
 # - export support
-# - integrate DTS importer
 # - procedural meshes, trackbuilder, etc
 # - import saved scene from game with vehicles
-# - try to parrallelize some tasks for better performance
-# - check what we can optimize more
 
 import bpy
 import traceback

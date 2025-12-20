@@ -27,6 +27,7 @@ from . import importer
 from . import properties as props_mod
 from . import ops_scan
 from . import materials_loader
+from . import realize_instances
 
 # Add-on preferences so user can set defaults that populate the UI
 class BeamNGLevelImporterPreferences(bpy.types.AddonPreferences):
@@ -68,7 +69,7 @@ def _apply_defaults_to_scene(scene: bpy.types.Scene):
     if not getattr(props, "user_folder", "") and prefs.default_user_folder:
       props.user_folder = prefs.default_user_folder
   except Exception:
-    pass
+    return
 
 def _apply_defaults_to_all_scenes():
   for scn in bpy.data.scenes:
@@ -97,6 +98,7 @@ def register():
       type=props_mod.BeamNGLevelImporterproperties
     )
   materials_loader.register_materials_loader()
+  realize_instances.register_realize_instances()
   _apply_defaults_to_all_scenes()
   if _beamng_apply_defaults_on_load not in bpy.app.handlers.load_post:
     bpy.app.handlers.load_post.append(_beamng_apply_defaults_on_load)
@@ -105,6 +107,10 @@ def unregister():
   from bpy.utils import unregister_class
   try:
     materials_loader.unregister_materials_loader()
+  except Exception:
+    pass
+  try:
+    realize_instances.unregister_realize_instances()
   except Exception:
     pass
   try:
