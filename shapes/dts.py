@@ -12,7 +12,11 @@ import bpy
 
 from .dts_core import import_dts as dts_loader
 from ..core.paths import resolve_model_path
-from ..utils.bpy_helpers import ensure_collection, pick_highest_lod
+from ..utils.bpy_helpers import (
+  ensure_collection,
+  pick_highest_lod_and_level,
+  is_collision_object_name,
+)
 from .common import shape_key
 
 
@@ -29,11 +33,12 @@ def _import_dts_from_exact_path(path: Path, shape_virt_path: str) -> bpy.types.O
   """
   Import a DTS/CDAE from an exact filesystem path (no extra resolution),
   then register the best object under the canonical key for shape_virt_path.
-  Behavior intentionally mirrors shapes/collada.py:
+  Behavior mirrors shapes/collada.py:
     - before/after object sets
-    - pick_best via pick_highest_lod
+    - pick best LOD level via pick_highest_lod_and_level
     - delete non-best
-    - hide & link best to ShapesLib
+    - join selected LOD meshes into one
+    - hide & link main object to ShapesLib
   """
   if not path or not path.exists():
     return None
@@ -64,17 +69,34 @@ def _import_dts_from_exact_path(path: Path, shape_virt_path: str) -> bpy.types.O
     print(f"WARN: No objects detected as imported for {path}")
     return None
 
-  # Optional transform apply (same pattern as Collada)
+  #print("DTS imported objects:", [o.name for o in imported])
+
+  mesh_imported = [o for o in imported if isinstance(getattr(o, "data", None), bpy.types.Mesh)]
+  visible_meshes = [o for o in mesh_imported if not is_collision_object_name(o.name)]
+  collision_meshes = [o for o in mesh_imported if is_collision_object_name(o.name)]
+
+  #print("DTS mesh_imported:", [o.name for o in mesh_imported])
+  #print("DTS visible_meshes:", [o.name for o in visible_meshes])
+  #print("DTS collision_meshes:", [o.name for o in collision_meshes])
+
+  candidates = visible_meshes or mesh_imported
+
   try:
     for o in imported:
       try:
-        o.select_set(True)
+        o.select_set(False)
       except Exception:
         pass
-    bpy.context.view_layer.objects.active = imported[0]
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-  except Exception:
-    pass
+    if mesh_imported:
+      for o in mesh_imported:
+        try:
+          o.select_set(True)
+        except Exception:
+          pass
+      bpy.context.view_layer.objects.active = mesh_imported[0]
+      bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+  except Exception as e:
+    print("WARN: transform_apply failed (DTS):", e)
   finally:
     for o in imported:
       try:
@@ -82,10 +104,22 @@ def _import_dts_from_exact_path(path: Path, shape_virt_path: str) -> bpy.types.O
       except Exception:
         pass
 
-  # Pick best LOD and delete others (mirrors shapes/collada.py)
-  best = pick_highest_lod(imported)
+  best_level, best_objs = pick_highest_lod_and_level(candidates)
+
+  if not best_objs:
+    print("WARN: No best LOD set found for DTS shape:", shape_virt_path)
+    for o in list(imported):
+      try:
+        for c in list(o.users_collection):
+          c.objects.unlink(o)
+        bpy.data.objects.remove(o, do_unlink=True)
+      except Exception:
+        pass
+    return None
+
+  best_set = set(best_objs)
   for o in list(imported):
-    if o == best:
+    if o in best_set:
       continue
     try:
       for c in list(o.users_collection):
@@ -93,24 +127,44 @@ def _import_dts_from_exact_path(path: Path, shape_virt_path: str) -> bpy.types.O
       bpy.data.objects.remove(o, do_unlink=True)
     except Exception:
       pass
-  if not best:
-    return None
 
-  best.name = key
+  # Join best_objs into a single object
+  if len(best_objs) > 1:
+    try:
+      for o in bpy.context.selected_objects:
+        try:
+          o.select_set(False)
+        except Exception:
+          pass
+      main_obj = best_objs[0]
+      for o in best_objs:
+        try:
+          o.select_set(True)
+        except Exception:
+          pass
+      bpy.context.view_layer.objects.active = main_obj
+      bpy.ops.object.join()
+    except Exception as e:
+      print("WARN: join failed for DTS best LOD objects:", e)
+      main_obj = best_objs[0]
+  else:
+    main_obj = best_objs[0]
 
-  # Ensure linked to ShapesLib and hidden (mirrors shapes/collada.py)
+  main_obj.name = key
+
   try:
-    if shapes_lib and best.name not in shapes_lib.objects:
-      shapes_lib.objects.link(best)
+    if shapes_lib and main_obj.name not in shapes_lib.objects:
+      shapes_lib.objects.link(main_obj)
   except Exception:
     pass
+
   try:
-    best.hide_set(True)
-    best.hide_render = True
+    main_obj.hide_set(True)
+    main_obj.hide_render = True
   except Exception:
     pass
 
-  return best
+  return main_obj
 
 
 def import_dts_shape(shape_virt_path: str, level_dir: Path | None) -> bpy.types.Object | None:

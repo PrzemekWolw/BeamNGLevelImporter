@@ -6,6 +6,8 @@
 # ##### END LICENSE BLOCK #####
 
 import bpy
+import re
+from typing import Iterable, Dict, List, Tuple, Optional
 
 def ensure_collection(name: str):
   c = bpy.data.collections.get(name)
@@ -49,10 +51,19 @@ def dedupe_materials():
       except Exception:
         pass
 
+
+_COL_SUFFIX_RE = re.compile(r"-\d+$")
+_BLENDER_COPY_RE = re.compile(r"\.\d+$")
+
+
 def is_collision_object_name(name: str) -> bool:
   if not name:
     return False
   n = name.lower()
+
+  if _COL_SUFFIX_RE.search(n) is not None:
+    return True
+
   if "colmesh" in n or "collision" in n:
     return True
   if n.startswith("col_") or n.startswith("colmesh_") or n.startswith("collision_"):
@@ -63,106 +74,78 @@ def is_collision_object_name(name: str) -> bool:
     return True
   return False
 
-def _parse_trailing_number_from_object(o: bpy.types.Object):
-  name = o.name or ""
+
+def _strip_blender_copy_suffix(name: str) -> str:
   if not name:
-    return name, None
-  i = len(name)
-  while i > 0 and name[i - 1].isdigit():
+    return name
+  return _BLENDER_COPY_RE.sub("", name)
+
+
+def _parse_trailing_number(name: str) -> Optional[int]:
+
+  if not name:
+    return None
+  base = _strip_blender_copy_suffix(name)
+  i = len(base)
+  while i > 0 and base[i - 1].isdigit():
     i -= 1
-  if i == len(name):
-    return name, None
-  base = name[:i]
+  if i == len(base):
+    return None
   try:
-    num = int(name[i:])
+    return int(base[i:])
   except Exception:
-    num = None
-  return base, num
+    return None
 
-def pick_highest_lod(objects):
-  mesh_objs = [o for o in objects if o and o.type == 'MESH' and o.data]
+
+def pick_highest_lod_and_level(
+  objects: Iterable[bpy.types.Object]
+) -> Tuple[Optional[int], List[bpy.types.Object]]:
+
+  objs = [o for o in objects if o is not None]
+  if not objs:
+    #print("pick_highest_lod_and_level: no objects")
+    return None, []
+
+  mesh_objs = [o for o in objs if o.type == 'MESH' and getattr(o, "data", None)]
   if not mesh_objs:
-    return None
+    #print("pick_highest_lod_and_level: no mesh objects in:", [o.name for o in objs])
+    return None, []
 
-  kept_meshes = []
-  for o in mesh_objs:
-    if is_collision_object_name(o.name):
-      try:
-        for c in list(o.users_collection):
-          c.objects.unlink(o)
-        bpy.data.objects.remove(o, do_unlink=True)
-      except Exception:
-        pass
-    else:
-      kept_meshes.append(o)
+  visible_meshes = [o for o in mesh_objs if not is_collision_object_name(o.name)]
+  if not visible_meshes:
+    #print("pick_highest_lod_and_level: only collision meshes found:",
+    #      [o.name for o in mesh_objs])
+    return None, []
 
-  if not kept_meshes:
-    return None
+  #print("pick_highest_lod_and_level: visible meshes:",
+  #      [o.name for o in visible_meshes])
 
-  mesh_objs = kept_meshes
-
-  groups_by_index = {}
+  by_index: Dict[int, List[bpy.types.Object]] = {}
   any_index = False
-  for o in mesh_objs:
-    base, num = _parse_trailing_number_from_object(o)
-    if num is None:
-      continue
-    any_index = True
-    groups_by_index.setdefault(num, []).append(o)
 
-  if any_index and groups_by_index:
-    best_index = max(groups_by_index.keys())
-    candidates = groups_by_index[best_index]
-    if len(candidates) == 1:
-      return candidates[0]
+  for o in visible_meshes:
+    idx = _parse_trailing_number(o.name)
+    if idx is not None:
+      any_index = True
+      by_index.setdefault(idx, []).append(o)
 
-    base_obj = candidates[0]
-    to_join = [o for o in candidates[1:] if o is not base_obj]
+  if not any_index:
+    # No numbers at all -> LODs don't exist, keep all visible meshes
+    #print("pick_highest_lod_and_level: no numeric suffixes, keeping all visible meshes")
+    return None, list(visible_meshes)
 
-    for o in bpy.context.selected_objects:
-      try:
-        o.select_set(False)
-      except Exception:
-        pass
-    try:
-      base_obj.select_set(True)
-    except Exception:
-      pass
-    for o in to_join:
-      try:
-        o.select_set(True)
-      except Exception:
-        pass
-    bpy.context.view_layer.objects.active = base_obj
-    try:
-      bpy.ops.object.join()
-    except Exception:
-      pass
-    return base_obj
+  # We have numeric indices: highest number is highest LOD
+  best_level = max(by_index.keys())
+  best_objs = by_index[best_level]
+  #print("pick_highest_lod_and_level: best LOD index:", best_level,
+  #      "objects:", [o.name for o in best_objs])
 
-  if len(mesh_objs) == 1:
-    return mesh_objs[0]
+  return best_level, best_objs
 
-  base_obj = mesh_objs[0]
-  to_join = mesh_objs[1:]
 
-  for o in bpy.context.selected_objects:
-    try:
-      o.select_set(False)
-    except Exception:
-      pass
-  try:
-    base_obj.select_set(True)
-  except Exception:
-    pass
-  for o in to_join:
-    try:
-      o.select_set(True)
-    except Exception:
-      pass
-  bpy.context.view_layer.objects.active = base_obj
-  try:
-    bpy.ops.object.join()
-  except Exception:
-    pass
-  return base_obj
+def pick_highest_lod(objects: Iterable[bpy.types.Object]) -> Optional[bpy.types.Object]:
+
+  _level, best_objs = pick_highest_lod_and_level(objects)
+  if not best_objs:
+    return None
+  return best_objs[0]
