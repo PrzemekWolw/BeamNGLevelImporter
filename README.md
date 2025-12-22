@@ -2,7 +2,7 @@
 
 BeamNG Level Importer is a Blender add-on that imports BeamNG levels into Blender with correct position, rotation, and scale. All assets are brought in with their materials and texture maps properly assigned.
 
-<img src="https://media.beamng.com/LsSu3WLCSALBgf2i" width="512">
+<img src="https://media.beamng.com/0AUIWsArutYp9yZF" width="512">
 
 BeamNG Modding Tools is a Lua extension for BeamNG.drive that converts legacy TorqueScript (`.cs`) material files to modern JSON format.
 
@@ -58,6 +58,12 @@ Many features of BeamNG Modding Tools are now integrated into the game under
 - Soft reloading of vehicle materials
 - Hard reloading of vehicle materials
 - Removal of temporary files for vehicles
+
+---
+
+## Screenshots
+
+<img src="https://media.beamng.com/vdOkksVTmWqpzo2p" width="512"> <img src="https://media.beamng.com/VOgyzYL2XHcpZTGw" width="512"> <img src="https://media.beamng.com/JlBmeci9SvrhOaaX" width="512">
 
 ---
 
