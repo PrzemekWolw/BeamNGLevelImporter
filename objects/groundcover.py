@@ -512,22 +512,25 @@ def build_groundcover_objects(ctx):
   except Exception: pass
   ctx.progress.update(f"GroundCover/Particles: {total}/{total}", step=1)
 
-def bake_groundcover_to_mesh(ctx=None,
-                             remove_particles=True,
-                             remove_gc_vgroups=True,
-                             remove_mat_vgroups=True,
-                             remove_helpers=True) -> list[bpy.types.Object]:
+def bake_groundcover_to_mesh(ctx=None, remove_particles=True, remove_gc_vgroups=True, remove_mat_vgroups=True, remove_helpers=True) -> list[bpy.types.Object]:
   """
-  Incremental bake: for each PART_GC_* system, collect its instances, append them
-  to BAKE_GC_<gcName> (creating it if needed), then immediately remove that psys.
-
-  This reduces peak RAM usage compared to baking all systems at once.
-
+  Bake all PART_GC_* systems into one mesh per GC: BAKE_GC_<gcName>, then remove particles.
   Returns list of baked GC objects.
   """
   terr = _get_first_terrain_object()
   if not terr:
     print("GroundCover/Bake: No terrain mesh found, abort.")
+    return []
+  # Collect PS info keyed by psys name
+  ps_info = {}
+  for psys in terr.particle_systems:
+    if not psys or not psys.settings: continue
+    if not psys.name.startswith("PART_GC_"): continue
+    inst_obj = getattr(psys.settings, "instance_object", None)
+    if not inst_obj or inst_obj.type != 'MESH': continue
+    ps_info[psys.name] = dict(psys=psys, inst_obj=inst_obj)
+  if not ps_info:
+    print("GroundCover/Bake: No GC particle systems found.")
     return []
 
   # Parse gcName and typeIdx from psys name "PART_GC_<gcName>_<idx>"
@@ -543,218 +546,345 @@ def bake_groundcover_to_mesh(ctx=None,
       tidx = None
     return gcname, tidx
 
-  # Collection for baked meshes
+  # Ensure all instances are visible to depsgraph
+  saved_disp = {}
+  for name, d in ps_info.items():
+    pset = d["psys"].settings
+    if hasattr(pset, "display_percentage"):
+      saved_disp[name] = pset.display_percentage
+      pset.display_percentage = 100
+  bpy.context.view_layer.update()
+
+  # Collect transforms per psys from depsgraph
+  dg = bpy.context.evaluated_depsgraph_get()
+  terr_eval = terr.evaluated_get(dg)
+  transforms = {name: [] for name in ps_info.keys()}
+  for inst in dg.object_instances:
+    try:
+      if not getattr(inst, "is_instance", False): continue
+      pinst = getattr(inst, "particle_system", None)
+      if not pinst: continue
+      psname = pinst.name
+      if psname not in transforms: continue
+      emitter = getattr(pinst, "id_data", None)
+      if emitter and getattr(emitter, "original", emitter) not in (terr, terr_eval):
+        continue
+      transforms[psname].append(inst.matrix_world.copy())
+    except Exception:
+      pass
+
+  # Restore display_percentage
+  for name, val in saved_disp.items():
+    try: ps_info[name]["psys"].settings.display_percentage = val
+    except Exception: pass
+  bpy.context.view_layer.update()
+
+  # Group psys by GC name
+  groups = {}
+  for psname in ps_info.keys():
+    gcname, tidx = _parse_gc(psname)
+    groups.setdefault(gcname, []).append(psname)
+
+  baked = []
+
+  # Create a collection for baked meshes
   tgt_coll = ensure_collection('_GroundCoverBaked')
   if tgt_coll.name not in bpy.context.scene.collection.children:
     bpy.context.scene.collection.children.link(tgt_coll)
-
-  # Map gcName -> baked object
-  baked_objs: dict[str, bpy.types.Object] = {}
 
   # Common UV patterns
   base_quad_uv = [(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)]
   base_tri_uv  = [(0.0,0.0),(1.0,0.0),(0.5,1.0)]
 
-  # Iterate until no more PART_GC_ particle modifiers exist.
-  while True:
-    # Find next GC particle modifier on the terrain
-    next_mod = None
-    for m in terr.modifiers:
-      if m.type == 'PARTICLE_SYSTEM':
-        psys = m.particle_system
-        if psys and psys.name.startswith("PART_GC_"):
-          next_mod = m
-          break
-    if not next_mod:
-      break  # no more systems
+  # Build one mesh per GC (numpy accelerated when available)
+  for gcname, ps_names in groups.items():
+    if _HAVE_NP:
+      # NumPy accelerated path
+      materials = []
+      mat_index_lut = {}
 
-    psys = next_mod.particle_system
-    pset = psys.settings
-    inst_obj = getattr(pset, "instance_object", None)
-    if not inst_obj or inst_obj.type != 'MESH':
-      # Just remove it and move on
-      try:
-        terr.modifiers.remove(next_mod)
-        if remove_particles and pset and pset.name.startswith("PART_GC_"):
-          bpy.data.particles.remove(pset, do_unlink=True)
-      except Exception:
-        pass
-      continue
+      per_ps_data = []
+      total_V = total_L = total_P = 0
 
-    psname = psys.name
-    gcname, tidx = _parse_gc(psname)
+      for psname in ps_names:
+        d = ps_info[psname]
+        inst_obj = d["inst_obj"]
+        src_me = inst_obj.data
 
-    # Ensure 100% display so depsgraph shows all instances
-    saved_disp = None
-    if hasattr(pset, "display_percentage"):
-      saved_disp = pset.display_percentage
-      pset.display_percentage = 100
-
-    # Force depsgraph update
-    bpy.context.view_layer.update()
-    dg = bpy.context.evaluated_depsgraph_get()
-    terr_eval = terr.evaluated_get(dg)
-
-    # Collect transforms for this single psys
-    transforms = []
-    for inst in dg.object_instances:
-      try:
-        if not getattr(inst, "is_instance", False):
-          continue
-        pinst = getattr(inst, "particle_system", None)
-        if not pinst:
-          continue
-        if pinst.name != psname:
-          continue
-        emitter = getattr(pinst, "id_data", None)
-        if emitter and getattr(emitter, "original", emitter) not in (terr, terr_eval):
-          continue
-        transforms.append(inst.matrix_world.copy())
-      except Exception:
-        pass
-
-    # Restore display_percentage
-    if saved_disp is not None:
-      try:
-        pset.display_percentage = saved_disp
-      except Exception:
-        pass
-    bpy.context.view_layer.update()
-
-    if not transforms:
-      # Nothing to bake, just remove this system
-      try:
-        terr.modifiers.remove(next_mod)
-        if remove_particles and pset and pset.name.startswith("PART_GC_"):
-          bpy.data.particles.remove(pset, do_unlink=True)
-      except Exception:
-        pass
-      continue
-
-    # Get / create baked object for this GC
-    me_name = f"BAKE_GC_{gcname}"
-    bake_ob = baked_objs.get(gcname)
-    if bake_ob and bake_ob.type != 'MESH':
-      bake_ob = None
-    if not bake_ob:
-      existing = bpy.data.meshes.get(me_name)
-      if existing:
-        try:
-          bpy.data.meshes.remove(existing)
-        except Exception:
-          pass
-      me = bpy.data.meshes.new(me_name)
-      bake_ob = bpy.data.objects.new(me_name, me)
-      _ensure_visible_obj(bake_ob)
-      if bake_ob.name not in tgt_coll.objects:
-        tgt_coll.objects.link(bake_ob)
-      baked_objs[gcname] = bake_ob
-
-    me = bake_ob.data
-
-    # Source mesh/topology
-    src_me = inst_obj.data
-    local_verts = [v.co.copy() for v in src_me.vertices]
-    local_faces = [list(p.vertices) for p in src_me.polygons]
-    if not local_faces:
-      # fallback quad
-      local_verts = [
-        Vector((0.0,-0.5,0.0)),
-        Vector((0.0, 0.5,0.0)),
-        Vector((0.0, 0.5,1.0)),
-        Vector((0.0,-0.5,1.0))
-      ]
-      local_faces = [[0,1,2,3]]
-    face_lengths = [len(f) for f in local_faces]
-
-    # Collect existing mesh data from baked mesh
-    vert_coords = [v.co.copy() for v in me.vertices]
-    polygon_loops = [list(p.vertices) for p in me.polygons]
-    polygon_mat_indices = [p.material_index for p in me.polygons]
-    existing_uvs = []
-    if me.uv_layers:
-      uv_layer = me.uv_layers.active
-      existing_uvs = [Vector(lo.uv) for lo in uv_layer.data]
-    uv_coords = existing_uvs or []
-
-    # Ensure material is present and get its material index on the baked mesh
-    mat = src_me.materials[0] if src_me.materials else None
-    me.materials.clear()
-    if mat:
-      me.materials.append(mat)
-    mat_index = 0  # single material on baked mesh for now
-
-    # For each instance, append transformed verts + faces + UVs
-    for M in transforms:
-      base_index = len(vert_coords)
-      tverts = [M @ v for v in local_verts]
-      vert_coords.extend(tverts)
-      for f in local_faces:
-        polygon_loops.append([base_index + i for i in f])
-        polygon_mat_indices.append(mat_index)
-      for flen in face_lengths:
-        if flen == 4:
-          uv_coords.extend(base_quad_uv)
-        elif flen == 3:
-          uv_coords.extend(base_tri_uv)
+        # local topology
+        local_faces = [list(p.vertices) for p in src_me.polygons]
+        if not local_faces:
+          local_verts = np.array([[0.0,-0.5,0.0],
+                                  [0.0, 0.5,0.0],
+                                  [0.0, 0.5,1.0],
+                                  [0.0,-0.5,1.0]], dtype=np.float32)
+          local_faces = [[0,1,2,3]]
         else:
-          # simple gradient
-          for i in range(flen):
-            t = i / max(1, flen - 1)
-            uv_coords.append((t, t))
+          local_verts = np.array([v.co[:] for v in src_me.vertices], dtype=np.float32)
 
-    # Now write back into mesh
-    me.clear_geometry()
-    me.from_pydata(vert_coords, [], polygon_loops)
-    me.update()
+        flens = np.array([len(f) for f in local_faces], dtype=np.int32)
+        face_loops = int(flens.sum())
+        face_count = len(local_faces)
+        loops_idx = np.fromiter((vi for f in local_faces for vi in f), dtype=np.int32, count=face_loops)
 
-    # Material indices
-    try:
-      me.polygons.foreach_set("material_index", polygon_mat_indices)
-    except Exception:
-      for i, p in enumerate(me.polygons):
-        try:
-          p.material_index = polygon_mat_indices[i]
-        except Exception:
-          pass
+        # material index for this ps
+        mat = inst_obj.data.materials[0] if inst_obj.data.materials else None
+        if mat not in mat_index_lut:
+          mat_index_lut[mat] = len(materials)
+          materials.append(mat)
+        mat_idx = mat_index_lut[mat]
 
-    # UVs
-    try:
-      uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
-      flat_uv = [c for uv in uv_coords for c in (uv[0], uv[1])]
-      total_loops = len(me.loops)
-      if len(flat_uv) < total_loops * 2:
-        flat_uv.extend([0.0, 0.0] * (total_loops - len(flat_uv)//2))
-      elif len(flat_uv) > total_loops * 2:
-        flat_uv = flat_uv[:total_loops*2]
-      uv_layer.data.foreach_set("uv", flat_uv)
-    except Exception:
-      pass
+        # instance count for this ps
+        M_list = transforms.get(psname, [])
+        k = len(M_list)
+        if k == 0:
+          continue
 
-    # Remove this particle system & settings to free RAM
-    try:
-      terr.modifiers.remove(next_mod)
-    except Exception:
-      pass
-    if remove_particles and pset and pset.name.startswith("PART_GC_"):
+        per_ps_data.append(dict(
+          local_verts=local_verts,
+          loops_idx=loops_idx,
+          flens=flens,
+          face_count=face_count,
+          face_loops=face_loops,
+          mat_idx=mat_idx,
+          mats=[np.array(M, dtype=np.float32) for M in M_list],
+        ))
+
+        total_V += k * local_verts.shape[0]
+        total_L += k * face_loops
+        total_P += k * face_count
+
+      if total_V == 0 or total_P == 0:
+        continue
+
+      # Preallocate big arrays
+      coords = np.empty((total_V, 3), dtype=np.float32)
+      loop_vertex_index = np.empty((total_L,), dtype=np.int32)
+      poly_loop_start = np.empty((total_P,), dtype=np.int32)
+      poly_loop_total = np.empty((total_P,), dtype=np.int32)
+      poly_mat_index = np.empty((total_P,), dtype=np.int32)
+      uv = np.empty((total_L, 2), dtype=np.float32)
+
+      base_quad_uv_np = np.array([(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)], dtype=np.float32)
+      base_tri_uv_np  = np.array([(0.0,0.0),(1.0,0.0),(0.5,1.0)], dtype=np.float32)
+
+      v0 = l0 = p0 = 0
+      for d in per_ps_data:
+        V = d["local_verts"]
+        Vn = V.shape[0]
+        Lidx = d["loops_idx"]
+        Flens = d["flens"]
+        F = d["face_count"]
+        L = d["face_loops"]
+        mat_idx = d["mat_idx"]
+        M_list = d["mats"]
+        K = len(M_list)
+
+        # Transform verts for all instances in one go
+        Vh = np.concatenate([V, np.ones((Vn,1), dtype=np.float32)], axis=1)  # (V,4)
+        M_np = np.stack(M_list, axis=0)  # (K,4,4)
+        tV = (Vh[None, :, :] @ np.transpose(M_np, (0,2,1)))  # (K,V,4)
+        tV = tV[..., :3].reshape(K*Vn, 3)
+        coords[v0:v0 + K*Vn, :] = tV
+
+        # Loops vertex indices: tile per-instance with vertex base offsets
+        l_block = (Lidx[None, :] + (np.arange(K, dtype=np.int32)[:, None] * Vn)).reshape(-1)
+        loop_vertex_index[l0:l0 + K*L] = l_block
+
+        # loop_total repeats for each instance
+        Flens_tile = np.tile(Flens, K)
+        poly_loop_total[p0:p0 + K*F] = Flens_tile
+
+        # loop_start per instance
+        per_face_offsets = np.zeros(F, dtype=np.int32)
+        if F > 1:
+          per_face_offsets[1:] = np.cumsum(Flens[:-1])
+        inst_base = (np.arange(K, dtype=np.int32) * L)[:, None]
+        loop_start_block = (inst_base + per_face_offsets[None, :]).reshape(-1)
+        poly_loop_start[p0:p0 + K*F] = l0 + loop_start_block
+
+        # Material indices per polygon
+        poly_mat_index[p0:p0 + K*F] = mat_idx
+
+        # UVs per loop: build one instance worth, then tile K times
+        uv_one = np.empty((L, 2), dtype=np.float32)
+        pos = 0
+        for fl in Flens:
+          if fl == 4:
+            uv_one[pos:pos+4, :] = base_quad_uv_np
+            pos += 4
+          elif fl == 3:
+            uv_one[pos:pos+3, :] = base_tri_uv_np
+            pos += 3
+          else:
+            t = np.linspace(0.0, 1.0, num=int(fl), dtype=np.float32)
+            uv_one[pos:pos+fl, 0] = t
+            uv_one[pos:pos+fl, 1] = t
+            pos += fl
+        uv[l0:l0 + K*L, :] = np.tile(uv_one, (K, 1))
+
+        v0 += K*Vn
+        l0 += K*L
+        p0 += K*F
+
+      # Build mesh using foreach_set
+      me_name = f"BAKE_GC_{gcname}"
+      me_old = bpy.data.meshes.get(me_name)
+      if me_old:
+        try: bpy.data.meshes.remove(me_old)
+        except Exception: pass
+      me = bpy.data.meshes.new(me_name)
+      me.vertices.add(total_V)
+      me.loops.add(total_L)
+      me.polygons.add(total_P)
+
+      me.vertices.foreach_set("co", coords.ravel())
+      me.loops.foreach_set("vertex_index", loop_vertex_index)
+      me.polygons.foreach_set("loop_start", poly_loop_start)
+      me.polygons.foreach_set("loop_total", poly_loop_total)
+      me.polygons.foreach_set("material_index", poly_mat_index)
+
+      me.validate()
+      me.update()
+
+      # Materials
+      for mat in materials:
+        me.materials.append(mat if mat else None)
+
+      # UVs
       try:
-        bpy.data.particles.remove(pset, do_unlink=True)
+        uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
+        uv_layer.data.foreach_set("uv", uv.ravel())
       except Exception:
         pass
 
+      ob = bpy.data.objects.new(me_name, me)
+      _ensure_visible_obj(ob)
+      if ob.name not in tgt_coll.objects:
+        tgt_coll.objects.link(ob)
+      baked.append(ob)
+
+    else:
+      # Fallback: original Python list path
+      verts = []
+      faces_only = []
+      face_mats = []
+      uv_coords = []
+
+      materials = []
+      mat_index_lut = {}  # material -> index
+
+      for psname in ps_names:
+        d = ps_info[psname]
+        inst_obj = d["inst_obj"]
+        src_me = inst_obj.data
+
+        # Local geometry; cache topology once per source mesh
+        local_verts = [v.co.copy() for v in src_me.vertices]
+        local_faces = [list(p.vertices) for p in src_me.polygons]
+        if not local_faces:
+          # fallback quad
+          local_verts = [Vector((0.0,-0.5,0.0)), Vector((0.0,0.5,0.0)), Vector((0.0,0.5,1.0)), Vector((0.0,-0.5,1.0))]
+          local_faces = [[0,1,2,3]]
+        face_lengths = [len(f) for f in local_faces]
+        # material for this ps
+        mat = inst_obj.data.materials[0] if inst_obj.data.materials else None
+        if mat not in mat_index_lut:
+          mat_index_lut[mat] = len(materials)
+          materials.append(mat)
+        mindex = mat_index_lut[mat]
+
+        # For each instance transform, transform the whole vertex set once
+        for M in transforms.get(psname, []):
+          base_index = len(verts)
+          # transform all vertices once per instance
+          tverts = [M @ v for v in local_verts]
+          verts.extend(tverts)
+          # add faces referencing the transformed vertices
+          for f in local_faces:
+            faces_only.append([base_index + i for i in f])
+            face_mats.append(mindex)
+          # UVs per polygon, use simple patterns (consistent with previous behavior)
+          for flen in face_lengths:
+            if flen == 4:
+              uv_coords.extend(base_quad_uv)
+            elif flen == 3:
+              uv_coords.extend(base_tri_uv)
+            else:
+              # simple gradient around polygon
+              for i in range(flen):
+                t = i / max(1, flen-1)
+                uv_coords.append((t, t))
+
+      # Build mesh/object for this GC using fast foreach_set where possible
+      me_name = f"BAKE_GC_{gcname}"
+      me_old = bpy.data.meshes.get(me_name)
+      if me_old:
+        try: bpy.data.meshes.remove(me_old)
+        except Exception: pass
+      me = bpy.data.meshes.new(me_name)
+      me.from_pydata(verts, [], faces_only)
+      me.update()
+
+      # Assign materials
+      for mat in materials:
+        me.materials.append(mat if mat else None)
+
+      # Assign material indices per polygon fast
+      try:
+        me.polygons.foreach_set("material_index", face_mats)
+      except Exception:
+        for i, p in enumerate(me.polygons):
+          try: p.material_index = face_mats[i]
+          except Exception: pass
+
+
+      # UVs using foreach_set for speed
+      try:
+        uv_layer = me.uv_layers.new(name="UV_BILLBOARD")
+        # flatten UVs
+        flat_uv = [c for uv in uv_coords for c in (uv[0], uv[1])]
+        # Ensure size matches; if not, clamp
+        total_loops = len(me.loops)
+        if len(flat_uv) < total_loops * 2:
+          flat_uv.extend([0.0, 0.0] * (total_loops - len(flat_uv)//2))
+        elif len(flat_uv) > total_loops * 2:
+          flat_uv = flat_uv[:total_loops*2]
+        uv_layer.data.foreach_set("uv", flat_uv)
+      except Exception:
+        pass
+
+      ob = bpy.data.objects.new(me_name, me)
+      _ensure_visible_obj(ob)
+      if ob.name not in tgt_coll.objects:
+        tgt_coll.objects.link(ob)
+      baked.append(ob)
+
+  # Remove particle systems and their ParticleSettings
+  removed_mods = 0
+  for mod in list(terr.modifiers):
     try:
-      bpy.context.view_layer.update()
+      if mod.type == 'PARTICLE_SYSTEM' and mod.particle_system and mod.particle_system.name.startswith("PART_GC_"):
+        terr.modifiers.remove(mod)
+        removed_mods += 1
     except Exception:
       pass
-
-  baked = list(baked_objs.values())
+  removed_psets = 0
+  for p in list(bpy.data.particles):
+    try:
+      if p.name.startswith("PART_GC_"):
+        bpy.data.particles.remove(p, do_unlink=True)
+        removed_psets += 1
+    except Exception:
+      pass
+  if removed_mods or removed_psets:
+    print(f"GroundCover/Bake: removed {removed_mods} particle modifiers and {removed_psets} ParticleSettings.")
 
   # Remove GC and/or MAT vertex groups from terrain
   if remove_gc_vgroups or remove_mat_vgroups:
     removed_vg = 0
     for vg in list(terr.vertex_groups):
-      if (remove_gc_vgroups and vg.name.startswith("GCmask_")) or \
-         (remove_mat_vgroups and vg.name.startswith("MAT_")):
+      if (remove_gc_vgroups and vg.name.startswith("GCmask_")) or (remove_mat_vgroups and vg.name.startswith("MAT_")):
         try:
           terr.vertex_groups.remove(vg)
           removed_vg += 1
@@ -770,10 +900,8 @@ def bake_groundcover_to_mesh(ctx=None,
       if ob.type == 'MESH' and ob.name.startswith("GC_BB_"):
         try:
           for coll in list(ob.users_collection):
-            try:
-              coll.objects.unlink(ob)
-            except Exception:
-              pass
+            try: coll.objects.unlink(ob)
+            except Exception: pass
           bpy.data.objects.remove(ob, do_unlink=True)
           removed_helpers += 1
         except Exception:
@@ -789,10 +917,8 @@ def bake_groundcover_to_mesh(ctx=None,
     if removed_helpers or removed_meshes:
       print(f"GroundCover/Bake: removed {removed_helpers} GC_BB_* objects and {removed_meshes} _GC_Q_* meshes.")
 
-  try:
-    bpy.context.view_layer.update()
-  except Exception:
-    pass
-
-  print(f"GroundCover/Bake: created {len(baked)} baked GC objects (incremental).")
+  # Final depsgraph update
+  try: bpy.context.view_layer.update()
+  except Exception: pass
+  print(f"GroundCover/Bake: created {len(baked)} baked GC objects.")
   return baked
