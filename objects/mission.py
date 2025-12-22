@@ -67,7 +67,10 @@ def build_mission_objects(ctx):
         sky = nt.nodes.new("ShaderNodeTexSky")
         bg = nt.nodes.get("Background") or nt.nodes.new("ShaderNodeBackground")
         nt.links.new(bg.inputs["Color"], sky.outputs["Color"])
-        sky.sky_type = 'NISHITA'
+        try:
+          sky.sky_type = 'MULTIPLE_SCATTERING'
+        except Exception:
+          sky.sky_type = 'NISHITA'
         sky.sun_disc = True
         try:
           sky.sun_elevation = math.radians(float(i.get('elevation', 40)))

@@ -1,137 +1,193 @@
-# BeamNG Level Importer + BeamNG Modding Tools
-BeamNG Level Importer is a Blender addon that allows you to import BeamNG levels with all assets into a Blender scene with the correct location, rotation and scale. Imported assets will have all materials assigned with their texture maps.
+# BeamNG Level Importer & BeamNG Modding Tools
+
+BeamNG Level Importer is a Blender add-on that imports BeamNG levels into Blender with correct position, rotation, and scale. All assets are brought in with their materials and texture maps properly assigned.
 
 <img src="https://media.beamng.com/LsSu3WLCSALBgf2i" width="512">
 
-BeamNG Modding Tools is a lua extension for BeamNG that allows exporting your level files from game to make them more compatible with Blender
-importer as well as convert your material files from TorqueScript (CS) to JSON.
+BeamNG Modding Tools is a Lua extension for BeamNG.drive that converts legacy TorqueScript (`.cs`) material files to modern JSON format.
 
 <img src="https://media.beamng.com/dUPY0lx2yEqxB0d7" width="462">
 
-Many features of BeamNG Modding Tools are now available in World Editor -> Window -> Resources Checker.
+Many features of BeamNG Modding Tools are now integrated into the game under
+**World Editor → Window → Resources Checker**.
+
+---
 
 ## Features
+
 ### BeamNG Level Importer
-- Default TOD settings as Nishita sky
-- Basic Terrain Materials v1.5 importing (WIP)
-- Materials V0 support
+
+- Default time-of-day (TOD) setup using Multiscatter/Nishita sky
+- Full support for Terrain Materials v0 and v1.5
+- Materials v0 support
 - Materials v1.5 support
-- BeamNG mod zip content importing
-- TerrainBlock importing
-- WaterBlock importing as a cube
+- Water material support
+- Support for relative textures
+- Support for common `/art` folder
+- Support for `/asset` folder and asset system
+- Support for asset linking
+- Custom COLLADA and DTS/CDAE importing that supports "locked" models or OpenCollada exports and other problematic mesh files
+- `TerrainBlock` importing
+- `WaterBlock` importing
 - SpotLight and PointLight importing
-- WaterPane importing as flat pane
-- CameraBookmarks importing
-- SoundEmitters importing
-- GroundPane importing
-- SceneTree folders structure
-- ForestItems importing and placement
+- `WaterPlane` importing
+- `DecalData` and decal instance importing
+- River importing
+- Groundcover importing
+- Decal road importing
+- Mesh road importing
+- Camera bookmark importing
+- Sound emitter importing
+- Ground plane importing
+- All other classes and their properties importing
+- SceneTree folder structure recreation
+- Forest item importing and placement via Geometry Nodes instances
+- Ability to realize TSStatic and Forest instances
+- Importing BeamNG material files
 
 ### BeamNG Modding Tools
-- World Editor integration
+
+- Integration with the in-game World Editor
 - Standalone mode
-- Legacy TorqueScript (CS) materials converter to JSON
-- Cleaning up of TorqueScript (CS) materials
-- Batch converting
-- DDS to PNG exporter (opposite tool to Texture Cooker)
-- Game meshes to COLLADA exporter
-- Game meshes to Wavefront exporter
-- BeamNG to Blender Exporting (game side)
-- Soft Reloading of vehicle materials
-- Hard Reloading of vehicle materials
-- Removal of vehicle's temporary files
+- Conversion of legacy TorqueScript (`.cs`) materials to JSON
+- Cleanup of TorqueScript (`.cs`) materials
+- Batch conversion support
+- DDS → PNG texture exporter (reverse of Texture Cooker)
+- Game mesh → COLLADA exporter
+- Game mesh → Wavefront OBJ exporter
+- Soft reloading of vehicle materials
+- Hard reloading of vehicle materials
+- Removal of temporary files for vehicles
 
-## Plans
+---
+
+## Roadmap
+
 ### BeamNG Level Importer
-- Add full Terrain Materials v1.5 support
-- Add Terrain Materials v0 support
-- Implement assimp importer to import incompatible COLLADA meshes
-- TorqueScript levels and materials importing
-- Legacy JSON levels support
-- In Blender level editing and changes saving support
-- Particle emitters support
-- Decal data importing
-- River objects importing
-- Groundcover support
-- Decal road support
-- Mesh Road support
-- Lower level of detail meshes importing
-- More materials features support
+
+Planned features:
+
+- Importing levels and materials defined in TorqueScript
+- Editing levels directly in Blender and saving changes back
+- Particle emitter support
+
+---
+
+## Known Issues
+
+### BeamNG Level Importer
+
+- There may be additional issues that have not yet been discovered or documented
 
 ### BeamNG Modding Tools
-- Possibly better mesh exporters from GameEngine
 
-## Issues
+- The game may crash when removing old `.cs` materials if a level is already loaded
+- COLLADA and Wavefront exports from the game engine may produce unexpected results
+
+---
+
+## Requirements
+
 ### BeamNG Level Importer
-- Many legacy COLLADA files won't import due to issues with Blender COLLADA importer
-- Random TerrainBlock placement issues in some corner cases
-- Missing emissive textures in Blender 4.0+ due to shader changes
-- Probably a lot more issues that I don't know of
+
+- **Operating system:**
+  - Windows (x64 or ARM64)
+  - Linux (x64 or ARM64)
+  - macOS (ARM64)
+- **Blender:** 4.5 LTS
 
 ### BeamNG Modding Tools
-- Broken PNG exporting in Vulkan API mode
-- Crashes when removing old CS materials when loaded into a level
-- Unexpected results of COLLADA and Wavefront exports from GameEngine
 
-## BeamNG Level Importer Requirements
-- OS: Windows or Linux
-- Blender: 3.0 or newer (3.6 LTS is targetted, includes a partial implementation for 4.0 and 4.1)
+- **Operating system:** Windows or Linux (x64)
+- **Game:** BeamNG.drive v0.38 or newer
 
-## BeamNG Modding Tools Requirements
-- OS: Windows or Linux or Wine/Proton
-- BeamNG.drive v0.31 or newer
-- Direct3D 11 mode (Vulkan API might be buggy when exporting textures)
+---
 
-## BeamNG Level Importer Installation
-- Make sure you met requirements above
-- Download addon from [releases](https://github.com/PrzemekWolw/BeamNGLevelImporter/releases) tab. Make you download Blender addon not source code or BeamNG extension.
-- Open Blender to install addon.
-- Go to preferences, addons, and install addon from zip there.
+## Installation
 
-## BeamNG Modding Tools Installation
-- Make sure you met requirements above
-- Download addon from [releases](https://github.com/PrzemekWolw/BeamNGLevelImporter/releases) tab. Make you downloaded BeamNG extension not source code or Blender addon.
-- Copy downloaded zip into your BeamNG mods folder
+### BeamNG Level Importer (Blender Add-on)
+
+1. Make sure your system meets the requirements above.
+2. Download the Blender add-on from the [Releases](https://github.com/PrzemekWolw/BeamNGLevelImporter/releases) page.
+   - **Important:** Download the **Blender add-on** file, *not* the source code or the BeamNG extension.
+3. Open Blender.
+4. Go to **Edit → Preferences → Add-ons → Install…**
+5. Select the downloaded `.zip` and install it.
+6. Enable the add-on in the Add-ons list if it is not enabled automatically.
+
+### BeamNG Modding Tools (BeamNG Extension)
+
+1. Make sure your system meets the requirements above.
+2. Download the BeamNG extension from the [Releases](https://github.com/PrzemekWolw/BeamNGLevelImporter/releases) page.
+   - **Important:** Download the **BeamNG extension**, *not* the source code or Blender add-on.
+3. Copy the downloaded `.zip` file into your BeamNG `mods` folder.
+
+---
 
 ## Usage
+
 ### BeamNG Level Importer
-#### Importing levels
-- Load BeamNG.drive
-- Load level you want to export
-- Open BeamNG Modding Tools by pressing `=`
-- Go to `Exporter` tab and press `Export level to Blender` and wait till the process finishes
-- Close BeamNG and launch Blender
-- In the Blender sidebar open BeamNG Level Importer
-- Select the level zip or folder you want to import, make sure to enable `Use ZIP Level` if you are importing zipped files
-- In `Exporter terrain Path` select your level export location which usually is your userfolder `/temp/exported/levels/levelname`
-- Press `Import Level Objects`
 
-## BeamNG Modding Tools
-### Generating new materials for old mods
-- Start the game
-- Insert a path to the folder of your mod that you want to convert
-- Press the `Convert` button
-- Copy the generated .json files from your userfolder back to your source files and remove all material.cs files, remove the cache of your mod.
+#### Importing a Level into Blender
 
-### Exporting textures or meshes
-- Start the game
-- Insert a path to folder of your mod which you want to export
-- Go to the `Exporter` tab
-- Press the button you want to use
-- Your exports will be available in your userfolder `/temp/exported/`
+1. In Blender, open the **Sidebar** (usually with the `N` key).
+2. Go to the **BeamNG Level Importer** panel.
+3. Set the paths to:
+   - Your **BeamNG game install folder**
+   - Your **BeamNG user folder**
+4. Click **Scan** to detect available levels.
+5. Select a level from the list.
+6. Click **Import Level**.
+
+---
+
+### BeamNG Modding Tools
+
+#### Converting Old Mods to New Material System
+
+1. Start BeamNG.drive.
+2. Open the Modding Tools interface (depending on installation, this may be under the World Editor or a dedicated UI).
+3. Enter the path to your mod’s folder that you want to convert.
+4. Click **Convert**.
+5. After conversion:
+   - Copy the generated `.json` material files from your BeamNG **user folder** back into your mod’s source folder.
+   - Delete all `materials.cs` (or other `.cs` material) files from the mod.
+   - Clear your mod’s cache so the game uses the new JSON-based materials.
+
+#### Exporting Textures or Meshes
+
+1. Start BeamNG.drive.
+2. Open the Modding Tools interface.
+3. Enter the path to the mod folder whose assets you want to export.
+4. Go to the **Exporter** tab.
+5. Click the export function you want to use (e.g., DDS → PNG, mesh → COLLADA, mesh → OBJ).
+6. The exported files will appear in your BeamNG user folder at:
+   `userfolder/temp/exported/`
+
+---
 
 ## FAQ / Troubleshooting
-### My game crashes when converting CS materials
- - Try converting your mod in main menu before you even load any level to avoid issues and leave more RAM space for conversion. Game may hang when converting.
-### Many meshes from my level are not visible in Blender import, most of them are just empties
- - Some COLLADA meshes are unsupported by Blender. You can try converting them yourself in other software first to avoid issues.
-### I cannot seem to be able to export textures from the game
-- Game might fail to export textures and levels when running in Vulkan API mode.
+
+### The game crashes when converting `.cs` materials
+
+- Try running the conversion from the **main menu**, before loading any level.
+  This reduces memory usage and can prevent crashes or long hangs during conversion.
+
+---
 
 ## Credits
-Special thanks to [@thomatoes50](https://github.com/thomatoes50) who helped me to clean lua code. In addition, I want to thanks for the original resource explorer code that was made to help me working on Polish Roads.
 
-Additional thanks for testing and giving ideas to: [@AgentMooshroom5](https://www.beamng.com/members/272928/), [@bob.blunderton](https://www.beamng.com/members/102419/), [@DankMemeBunny](https://www.beamng.com/members/163405/), [@falefee](https://www.beamng.com/members/52708/), [@Nekkit](https://www.beamng.com/members/315904/).
+Special thanks to [@thomatoes50](https://github.com/thomatoes50) for help with cleaning up the Lua code and for providing the original Resource Explorer code that greatly assisted work on the Polish Roads project.
+
+Additional thanks for testing, feedback, and ideas to:
+[@AgentMooshroom5](https://www.beamng.com/members/272928/),
+[@bob.blunderton](https://www.beamng.com/members/102419/),
+[@DankMemeBunny](https://www.beamng.com/members/163405/),
+[@falefee](https://www.beamng.com/members/52708/),
+[@Nekkit](https://www.beamng.com/members/315904/).
+
+---
 
 ## License
-This project is licensed under the MIT license. See LICENSE for more information.
+
+This project is licensed under the MIT License. See the `LICENSE` file for full details.

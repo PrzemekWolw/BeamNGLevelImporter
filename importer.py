@@ -10,7 +10,6 @@
 
 ######## todo ########
 # - basic 5.x support...
-#     - multiscatter instead of nishita
 #     - check other issues
 # - ts support
 #   - add support for older forest format
