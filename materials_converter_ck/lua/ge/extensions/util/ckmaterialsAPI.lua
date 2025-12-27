@@ -260,7 +260,7 @@ local function blenderExporterwork(job, convertdata)
   job.progress = 0
   job.sleep(0.001)
   local date = os.date('!%Y-%m-%dT%H:%M:%SZ')
-  local outDir = '/temp/blender_exports/'..date
+  local outDir = '/temp/blender_exports/'..date..'/'
   local vehNames = scenetree.findClassObjects('BeamNGVehicle')
 
   if not vehNames or #vehNames == 0 then
