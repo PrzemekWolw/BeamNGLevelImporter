@@ -29,6 +29,18 @@ class BEAMNG_UL_Levels(UIList):
       layout.alignment = 'CENTER'
       layout.label(text=item.name)
 
+
+class BEAMNG_UL_Manifests(UIList):
+  bl_idname = "BEAMNG_UL_Manifests"
+
+  def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+    # item: ManifestEntry
+    label = f"{item.exportedAt}  ({item.vehicles_count} vehicles)"
+    if getattr(item, "level_vfs", ""):
+      label += f" | {item.level_vfs}"
+    layout.label(text=label, icon='FILE')
+
+
 class BeamNGLevelImporterUI(Panel):
   bl_label = 'BeamNG Level Importer Menu'
   bl_idname = 'object.beamnglevelimporterui_3dview'
@@ -78,14 +90,24 @@ class BeamNGLevelImporterUI(Panel):
       if not has_list:
         col.label(text="No level selected (run scanner)")
       else:
-        col.operator(importer.BeamNGLevelImporterLoader.bl_idname,
-                    text="Import Level", icon='IMPORT')
+        col.operator(importer.BeamNGLevelImporterLoader.bl_idname, text="Import Level", icon='IMPORT')
     else:
       if props.levelpath == "" and props.zippath == "*.zip":
         col.label(text="You did not select location of files")
       else:
-        col.operator(importer.BeamNGLevelImporterLoader.bl_idname,
-                    text="Import Level", icon='IMPORT')
+        col.operator(importer.BeamNGLevelImporterLoader.bl_idname, text="Import Level", icon='IMPORT')
+
+    # Vehicle State section
+    if props.use_scanner:
+      layout.separator()
+      boxm = layout.box()
+      boxm.label(text="BeamNG Vehicle State")
+      row = boxm.row(align=True)
+      row.operator("beamng.scan_manifests", text="Scan Vehicle States", icon='VIEWZOOM')
+      boxm.template_list("BEAMNG_UL_Manifests", "", props, "manifests", props, "manifests_index", rows=6)
+      boxm.prop(props, "import_manifest_import_level")
+      op = boxm.operator("beamng.import_export_manifest", text="Import Selected State", icon='IMPORT')
+      op.import_level_too = props.import_manifest_import_level
 
     # TSStatic / Forest realization tools
     layout.separator()

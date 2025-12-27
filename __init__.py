@@ -26,6 +26,7 @@ from . import ui
 from . import importer
 from . import properties as props_mod
 from . import ops_scan
+from . import ops_scan_manifests
 from . import materials_loader
 from . import realize_instances
 
@@ -82,11 +83,15 @@ def _beamng_apply_defaults_on_load(_dummy):
 classes = (
   BeamNGLevelImporterPreferences,
   props_mod.LevelEntry,
+  props_mod.ManifestEntry,
   props_mod.BeamNGLevelImporterproperties,
   ui.BEAMNG_UL_Levels,
+  ui.BEAMNG_UL_Manifests,
   ui.BeamNGLevelImporterUI,
   ops_scan.BEAMNG_OT_ScanLevels,
+  ops_scan_manifests.BEAMNG_OT_ScanManifests,
   importer.BeamNGLevelImporterLoader,
+  importer.BeamNGExportManifestImporter,
 )
 
 def register():

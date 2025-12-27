@@ -17,11 +17,14 @@
 # - particle support
 # - export support
 # - procedural meshes, trackbuilder, etc
-# - import saved scene from game with vehicles
 
 import bpy
 import traceback
+from pathlib import Path
+from bpy.props import BoolProperty
 from .pipeline import import_level
+from .manifest_import import import_manifest
+from .ops_scan_manifests import scan_manifests_into_props
 
 class BeamNGLevelImporterLoader(bpy.types.Operator):
   bl_idname = "object.beamnglevelimporter_loader"
@@ -41,3 +44,42 @@ class BeamNGLevelImporterLoader(bpy.types.Operator):
       traceback.print_exc()
       self.report({'ERROR'}, f"{e.__class__.__name__}: {e}")
       return {'CANCELLED'}
+
+class BeamNGExportManifestImporter(bpy.types.Operator):
+  bl_idname = "beamng.import_export_manifest"
+  bl_label = "Import BeamNG Vehicle State"
+  bl_options = {'REGISTER', 'UNDO'}
+
+  import_level_too: BoolProperty(
+    name="Import Level Too",
+    default=False,
+    description="Also import level referenced by manifest['level'] (VFS path)."
+  )
+
+  def execute(self, context):
+    props = getattr(context.scene, "BeamNGLevelImporter", None)
+    if props is None:
+      self.report({'ERROR'}, "Scene.BeamNGLevelImporter is missing. Re-enable the add-on.")
+      return {'CANCELLED'}
+
+    # Auto-scan manifests if list is empty
+    if not props.manifests:
+      scan_manifests_into_props(props)
+
+    if not props.manifests or not (0 <= props.manifests_index < len(props.manifests)):
+      self.report({'ERROR'}, "No manifest selected/found. Set User Folder and click 'Scan Vehicle States'.")
+      return {'CANCELLED'}
+
+    manifest_path = Path(props.manifests[props.manifests_index].path)
+    if not manifest_path.exists():
+      self.report({'ERROR'}, f"Manifest file missing: {manifest_path}")
+      return {'CANCELLED'}
+
+    try:
+      import_manifest(manifest_path, import_level_too=bool(self.import_level_too), operator=self)
+    except Exception as e:
+      traceback.print_exc()
+      self.report({'ERROR'}, f"{e.__class__.__name__}: {e}")
+      return {'CANCELLED'}
+
+    return {'FINISHED'}

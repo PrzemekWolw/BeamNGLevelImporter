@@ -73,6 +73,13 @@ class LevelEntry(bpy.types.PropertyGroup):
   name: StringProperty(name="Name", default="")
   origin: StringProperty(name="Origin", default="")
 
+class ManifestEntry(bpy.types.PropertyGroup):
+  exportedAt: StringProperty(name="Exported At", default="")
+  path: StringProperty(name="Manifest Path", default="")
+  out_dir: StringProperty(name="Out Dir", default="")
+  level_vfs: StringProperty(name="Level VFS", default="")
+  vehicles_count: IntProperty(name="Vehicles", default=0)
+
 class BeamNGLevelImporterproperties(bpy.types.PropertyGroup):
   enable_zip: BoolProperty(name="Use ZIP Level", default=False)
   levelpath: StringProperty(name="", description="Choose a level directory", subtype='DIR_PATH', default="")
@@ -113,3 +120,20 @@ class BeamNGLevelImporterproperties(bpy.types.PropertyGroup):
 
   levels: CollectionProperty(type=LevelEntry)
   levels_index: IntProperty(name="Level Index", default=0, min=0)
+
+  # Manifest import option
+  import_manifest_import_level: BoolProperty(
+    name="Import Level",
+    default=True,
+    description="When importing BeamNG Vehicle state, also import the referenced level"
+  )
+
+  # Manifest scan/list
+  manifests_root: StringProperty(
+    name="Manifests Root",
+    subtype='DIR_PATH',
+    description="Folder to scan for BeamNG Vehicle state. Leave empty to use <User Folder>/temp/blender_exports/",
+    default=""
+  )
+  manifests: CollectionProperty(type=ManifestEntry)
+  manifests_index: IntProperty(name="Manifest Index", default=0, min=0)
