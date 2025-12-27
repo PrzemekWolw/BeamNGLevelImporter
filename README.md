@@ -44,6 +44,7 @@ Many features of BeamNG Modding Tools are now integrated into the game under
 - Forest item importing and placement via Geometry Nodes instances
 - Ability to realize TSStatic and Forest instances
 - Importing BeamNG material files
+- Importing BeamNG vehicles state
 
 ### BeamNG Modding Tools
 
@@ -58,6 +59,7 @@ Many features of BeamNG Modding Tools are now integrated into the game under
 - Soft reloading of vehicle materials
 - Hard reloading of vehicle materials
 - Removal of temporary files for vehicles
+- Exporting BeamNG vehicles state
 
 ---
 
