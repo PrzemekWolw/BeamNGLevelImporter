@@ -257,48 +257,67 @@ end
 local blenderExporterworkJob
 
 local function blenderExporterwork(job, convertdata)
-  local verifydata = convertdata
-  local isDone
   job.progress = 0
   job.sleep(0.001)
-  if not verifydata then
-    log('E', '', 'There is no material path' )
-    isDone = 2
-  elseif not string.match(verifydata, "/") or not string.match(verifydata, "levels/") then
-    log('E', '', 'Incorrect path' )
-    isDone = 2
-  else
-    log('I', '', 'Exporting level' )
+  local date = os.date('!%Y-%m-%dT%H:%M:%SZ')
+  local outDir = '/temp/blender_exports/'..date
+  local vehNames = scenetree.findClassObjects('BeamNGVehicle')
 
-    --V2, shortcode much more efficient, checks all types of files at once
-    local meshFiles = FS:findFiles(verifydata, "*.dds", -1, true, false)
-    for k,v in ipairs(meshFiles) do
-      if job.progress < 50 then
-        job.progress = job.progress + 0.1
-      end
-      job.yield()
-      local dir, basefilename, ext = path.splitWithoutExt(v)
-      local filepathIn = v
-      local filepath = "temp/exported/"..dir..basefilename..".png"
-      if not convertDDSToPNG(filepathIn, filepath) then
-        log('E', 'Unable to convert dds to png: ' .. tostring(filepathIn))
-      end
-      log('I', 'Converted dds to png: ' .. tostring(filepath))
-    end
-    job.progress = 50
-    local terrain = core_terrain.getTerrain()
-    if terrain then
-      local filepath = "temp/exported/"..verifydata.."/"
-      terrain:exportHeightMap(filepath..'heightMap.png', 'png')
-      terrain:exportHoleMaps(filepath..'holeMap', 'png')
-      terrain:exportLayerMaps(filepath..'layerMap', 'png')
-      log('I', 'Exported current terrain layers: '..filepath)
-    end
-    job.progress = 100
-    job.sleep(0.001)
-    isDone = 1
+  if not vehNames or #vehNames == 0 then
+    log('E', '', 'No BeamNG vehicles found in scene')
+    extensions.editor_ckmaterials.jobData(4, 2)
+    return
   end
-  extensions.editor_ckmaterials.jobData(4, isDone)
+  extensions.util_export.embedBuffers = true
+  extensions.util_export.gltfBinaryFormat = true
+  local manifest = {
+    version = 1,
+    exportedAt = date,
+    outDir = outDir,
+    vehicles = {},
+    level = convertdata
+  }
+  log('I', '', ('Exporting %d vehicles to %s'):format(#vehNames, outDir))
+  for i, vehName in ipairs(vehNames) do
+    local veh = scenetree.findObject(vehName)
+    if veh then
+      local vid = veh:getID()
+      if be and be.enterVehicle then
+        be:enterVehicle(0, veh)
+      end
+      local name = (veh:getName() and veh:getName() ~= '') and veh:getName() or ('vehicle_' .. tostring(vid))
+      local safeName = name:gsub('[^%w_%-%.]', '_')
+      local glbFile = outDir .. safeName .. '.glb'
+      extensions.util_export.exportFile(glbFile, true)
+      -- collect pose + some info
+      local pos = veh.getPosition and veh:getPosition() or nil
+      local rot = veh.getRotation and veh:getRotation() or nil -- usually a quat
+      local s   = veh.getScale    and veh:getScale()    or nil
+      local entry = {
+        id = vid,
+        name = name,
+        sceneObject = vehName,
+        file = safeName .. '.glb',
+        filePath = glbFile,
+        position = pos and {x = pos.x, y = pos.y, z = pos.z} or nil,
+        rotation = rot and {x = rot.x, y = rot.y, z = rot.z, w = rot.w} or nil,
+        scale    = s   and {x = s.x,   y = s.y,   z = s.z}   or nil
+      }
+      if veh.getJBeamFilename then entry.jbeam = veh:getJBeamFilename() end
+      if veh.getVehicleDirectory then entry.vehicleDir = veh:getVehicleDirectory() end
+      if veh.getPartConfigFilename then entry.partConfig = veh:getPartConfigFilename() end
+      table.insert(manifest.vehicles, entry)
+    end
+    job.progress = math.floor((i / #vehNames) * 100)
+    job.sleep(0.001)
+  end
+
+  local jsonPath = outDir .. 'export_manifest.json'
+  jsonWriteFile(jsonPath, manifest, true)
+
+  job.progress = 100
+  job.sleep(0.001)
+  extensions.editor_ckmaterials.jobData(4, 1)
 end
 
 local function shapeDecompiler(meshesTable)

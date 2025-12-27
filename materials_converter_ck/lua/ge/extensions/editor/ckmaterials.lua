@@ -30,12 +30,8 @@ local removeCS = false
 local ver = nil
 local bigver = nil
 
---platforms
-local isVulkan = 0
-local isLinux = 0
-
 --da app info
-local tool_version = "2.0.1"
+local tool_version = "2.1.0"
 local appTitle = " Car_Killer Modding Tools - ".. tool_version .." - ".. beamng_buildtype .." - ".. beamng_arch
 
 local toolWindowName = 'addon_ckmaterials'
@@ -46,40 +42,6 @@ local function gameVER()
   bigver = string.format("%0.4s", ver)
   --print(bigver)
 
-end
-
---get api info to prevent vk
-local function getGFX()
-  gameVER()
-  --print(gfx)
-  if tonumber(bigver) <= 0.22 then
-    isVulkan = 2
-    log('E', '', 'Cannot retrieve API information' )
-    log('E', '', 'Old game version detected' )
-  else
-    local gfx = Engine.Render.getAdapterType()
-    if not string.match(gfx, "Direct3D11") then
-      isVulkan = 1
-      log('W', '', 'Vulkan API mode detected' )
-
-      else
-      log('I', '', 'Vulkan API mode not detected' )
-    end
-  end
-end
-
---get os version
-local function getOS()
-  local os = Engine.Platform.getOSInfo()
-  --print(dump(os))
-  --print(os.shortname)
-  if not os.shortname == "Windows" then
-    isLinux = 1
-    log('W', '', 'Linux Detected' )
-
-  else
-    log('I', '', 'Windows Detected' )
-  end
 end
 
 local function checkEditor(job, matdata)
@@ -264,9 +226,8 @@ local function exportTab()
     exporter = convertAPI.textureExporter(convertdata)
   end
   im.SameLine()
-  if im.Button("Export level to Blender") then
-    convertdata = ffi.string(matdata)
-    exporter = convertAPI.blenderExporter(convertdata)
+  if im.Button("Export current vehicle state to Blender") then
+    exporter = convertAPI.blenderExporter(convertAPI.getLevel())
   end
   if not exporter and getApiProgress() == nil then
     im.Text("Press one of the buttons to get informations!")
@@ -283,22 +244,6 @@ local function renderImgui()
   im.Begin(appTitle, showUI, im.WindowFlags_AlwaysAutoResize)
 
   im.Text("This tool is here to help you converting materials from cs to json")
-
-  --we need to show if people using vulkan
-  if isVulkan == 1 then
-    im.TextColored(im.ImVec4(1, 0, 0, 1), "Vulkan API Detected! Some features might be broken")
-  end
-
-  --old version info
-  if isVulkan == 2 then
-    im.TextColored(im.ImVec4(1, 0, 0, 1), "Old game version detected!")
-    im.TextColored(im.ImVec4(1, 0, 0, 1), "Can't detect rendering API!")
-  end
-
-  --same but Linux
-  if isLinux == 1 then
-    im.TextColored(im.ImVec4(1, 0, 0, 1), "Linux Detected! Some features might be broken")
-  end
 
   im.Spacing()
 
@@ -394,8 +339,6 @@ local function toggleUI()
 end
 
 local function onExtensionLoaded()
-  getGFX(gfx)
-  getOS(os)
   if showUI == nil then
     showUI = ui_imgui.BoolPtr(false)
   end
