@@ -288,6 +288,12 @@ local function blenderExporterwork(job, convertdata)
       local name = (veh:getName() and veh:getName() ~= '') and veh:getName() or ('vehicle_' .. tostring(vid))
       local safeName = name:gsub('[^%w_%-%.]', '_')
       local glbFile = outDir .. safeName .. '.glb'
+      -- we need to set these to true as most of vehicles use these
+      extensions.util_export.exportNormals = true
+      extensions.util_export.exportTangents = true
+      extensions.util_export.exportTexCoords = true
+      extensions.util_export.exportColors = true
+      -- do actual export
       extensions.util_export.exportFile(glbFile, true)
       -- collect pose + some info
       local pos = veh.getPosition and veh:getPosition() or nil
