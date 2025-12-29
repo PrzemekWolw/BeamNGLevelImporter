@@ -16,6 +16,44 @@ try:
 except Exception:
   HAS_NUMPY = False
 
+
+def _gn_add_io_socket(node_group, *, in_out: str, name: str, socket_type: str):
+  """
+  Blender 4.x+: node_group.interface.new_socket(...)
+  Blender 3.6:  node_group.inputs.new(...) / node_group.outputs.new(...)
+  """
+  if hasattr(node_group, "interface"):
+    node_group.interface.new_socket(name=name, in_out=in_out, socket_type=socket_type)
+    return
+
+  # Blender 3.6 fallback
+  if in_out == 'INPUT':
+    # signature: inputs.new(type, name)
+    node_group.inputs.new(socket_type, name)
+  else:
+    node_group.outputs.new(socket_type, name)
+
+
+def _node_output_socket(node, preferred_name: str):
+  """Return node.outputs[preferred_name] if it exists else first output."""
+  s = node.outputs.get(preferred_name)
+  if s:
+    return s
+  if node.outputs:
+    return node.outputs[0]
+  return None
+
+
+def _node_input_socket(node, preferred_name: str):
+  """Return node.inputs[preferred_name] if it exists else first input."""
+  s = node.inputs.get(preferred_name)
+  if s:
+    return s
+  if node.inputs:
+    return node.inputs[0]
+  return None
+
+
 def build_tsstatic_instancers(ts_groups, progress=None):
   """
   Build TSStatic instancers.
@@ -50,7 +88,9 @@ def build_tsstatic_instancers(ts_groups, progress=None):
         rot = np.empty((n_pts, 3), dtype=np.float32)
         scl = np.empty((n_pts, 3), dtype=np.float32)
         for i, it in enumerate(items):
-          p = it['pos']; e = it['rot_euler']; s = _normalize_scale(it['scale'])
+          p = it['pos']
+          e = it['rot_euler']
+          s = _normalize_scale(it['scale'])
           co[i] = (float(p[0]), float(p[1]), float(p[2]))
           rot[i] = (float(e.x), float(e.y), float(e.z))
           scl[i] = (float(s[0]), float(s[1]), float(s[2]))
@@ -88,8 +128,10 @@ def build_tsstatic_instancers(ts_groups, progress=None):
 
       input_node = node_group.nodes.new('NodeGroupInput')
       output_node = node_group.nodes.new('NodeGroupOutput')
-      node_group.interface.new_socket(name='Geometry', in_out='INPUT', socket_type='NodeSocketGeometry')
-      node_group.interface.new_socket(name='Geometry', in_out='OUTPUT', socket_type='NodeSocketGeometry')
+
+      # Add group sockets (3.6 compatible)
+      _gn_add_io_socket(node_group, in_out='INPUT',  name='Geometry', socket_type='NodeSocketGeometry')
+      _gn_add_io_socket(node_group, in_out='OUTPUT', name='Geometry', socket_type='NodeSocketGeometry')
 
       object_info_node = node_group.nodes.new('GeometryNodeObjectInfo')
       object_info_node.inputs['Object'].default_value = lib_obj
@@ -108,15 +150,37 @@ def build_tsstatic_instancers(ts_groups, progress=None):
       if hasattr(scl_attr_node, "data_type"):
         scl_attr_node.data_type = 'FLOAT_VECTOR'
 
-      node_group.links.new(input_node.outputs['Geometry'], instance_node.inputs['Points'])
-      node_group.links.new(object_info_node.outputs['Geometry'], instance_node.inputs['Instance'])
-      node_group.links.new(rot_attr_node.outputs['Attribute'], instance_node.inputs['Rotation'])
-      node_group.links.new(scl_attr_node.outputs['Attribute'], instance_node.inputs['Scale'])
-      try:
-        node_group.links.new(instance_node.outputs['Instances'], output_node.inputs['Geometry'])
-      except Exception:
-        if 'Geometry' in instance_node.outputs:
-          node_group.links.new(instance_node.outputs['Geometry'], output_node.inputs['Geometry'])
+      # Wire: Group Input Geometry -> Instance on Points Points
+      node_group.links.new(
+        _node_output_socket(input_node, 'Geometry'),
+        _node_input_socket(instance_node, 'Points')
+      )
+
+      # Wire: Object Info -> Instance
+      node_group.links.new(
+        _node_output_socket(object_info_node, 'Geometry'),
+        _node_input_socket(instance_node, 'Instance')
+      )
+
+      # Wire: rot/scale attrs
+      node_group.links.new(
+        _node_output_socket(rot_attr_node, 'Attribute'),
+        _node_input_socket(instance_node, 'Rotation')
+      )
+      node_group.links.new(
+        _node_output_socket(scl_attr_node, 'Attribute'),
+        _node_input_socket(instance_node, 'Scale')
+      )
+
+      # Wire: Instance output -> Group Output Geometry
+      out_sock = _node_input_socket(output_node, 'Geometry')
+      inst_out = (
+        instance_node.outputs.get('Instances') or
+        instance_node.outputs.get('Geometry') or
+        (instance_node.outputs[0] if instance_node.outputs else None)
+      )
+      if inst_out and out_sock:
+        node_group.links.new(inst_out, out_sock)
 
       mod.node_group = node_group
 

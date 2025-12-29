@@ -102,7 +102,9 @@ Planned features:
   - Windows (x64 or ARM64)
   - Linux (x64 or ARM64)
   - macOS (ARM64)
-- **Blender:** 4.5 LTS or 5.0
+- **Blender:**
+  - **minimum working version:** 3.3 LTS
+  - **supported versions:** 4.5 LTS or 5.0 recommended, 3.6 LTS
 
 ### BeamNG Modding Tools
 

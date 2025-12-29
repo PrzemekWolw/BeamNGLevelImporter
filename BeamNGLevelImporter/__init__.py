@@ -10,7 +10,7 @@ bl_info = {
   "name": "BeamNG Level Importer",
   "author": "Przemysław Wolny (Car_Killer)",
   "version": (0, 2, 0),
-  "blender": (4, 5, 0),
+  "blender": (3, 6, 0),
   "location": "View3D > Sidebar > BeamNG Level Importer",
   "description": "Import all level objects",
   "warning": "",
