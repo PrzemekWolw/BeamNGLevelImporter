@@ -51,7 +51,29 @@ def _getv4(v, k, d=(0,0,0,0)):
   return tuple(float(x) for x in vv[:4]) if isinstance(vv,(list,tuple)) and len(vv)>=4 else d
 
 def _vec_math(nt, op):
-  n = nt.nodes.new('ShaderNodeVectorMath'); n.operation = op; return n
+  n = nt.nodes.new('ShaderNodeVectorMath')
+  n.operation = op
+  return n
+
+def _new_separate_rgb(nt):
+  """Blender 5.0+: Separate Color; older: Separate RGB."""
+  try:
+    n = nt.nodes.new("ShaderNodeSeparateColor")
+    n.mode = 'RGB'
+    return n, ("Red", "Green", "Blue")
+  except RuntimeError:
+    n = nt.nodes.new("ShaderNodeSeparateRGB")
+    return n, ("R", "G", "B")
+
+def _new_combine_rgb(nt):
+  """Blender 5.0+: Combine Color; older: Combine RGB."""
+  try:
+    n = nt.nodes.new("ShaderNodeCombineColor")
+    n.mode = 'RGB'
+    return n, ("Red", "Green", "Blue")
+  except RuntimeError:
+    n = nt.nodes.new("ShaderNodeCombineRGB")
+    return n, ("R", "G", "B")
 
 def _build_distance_factors(nt, pixel_dist, d0,d1,d2,d3):
   d0n = value_node(nt, d0); d1n = value_node(nt, d1); d2n = value_node(nt, d2); d3n = value_node(nt, d3)
@@ -151,8 +173,6 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
   ao_base    = _get(v,'aoBaseTex')
   ao_macro   = _get(v,'aoMacroTex');         amac_size = _getf(v,'aoMacroTexSize', 60.0)
   ao_detail  = _get(v,'aoDetailTex');        adet_size = _getf(v,'aoDetailTexSize', 2.0)
-
-  hgt_base   = _get(v,'heightBaseTex');      hgt_size  = _getf(v,'heightBaseTexSize', 2.0)  # not used here
 
   dmac = _getv4(v,'macroDistances', (0,10,100,1000))
   ddet = _getv4(v,'detailDistances', (0,0,50,100))
@@ -303,23 +323,43 @@ def build_terrain_material_v15(level_dir: Path, v: dict, out_list: list[str], te
     link(links, img.outputs[0], nm.inputs['Color'])
     return img, nm.outputs[0]
 
-  def _lerp_norm(nt, a, b, t):
-    mix = nt.nodes.new('ShaderNodeMixRGB'); mix.blend_type='MIX'; place(mix, X_NRM+160, ROW0-300, frame_nrm, label='Lerp Normals')
-    link(links, t, mix.inputs[0])
-    sep1 = nt.nodes.new('ShaderNodeSeparateXYZ'); place(sep1, X_NRM+80, ROW0-220, frame_nrm, 'Sep A')
-    sep2 = nt.nodes.new('ShaderNodeSeparateXYZ'); place(sep2, X_NRM+80, ROW0-380, frame_nrm, 'Sep B')
-    link(links, a, sep1.inputs[0]); link(links, b, sep2.inputs[0])
-    comb1 = nt.nodes.new('ShaderNodeCombineRGB'); place(comb1, X_NRM+120, ROW0-220, frame_nrm, 'Comb A')
-    comb2 = nt.nodes.new('ShaderNodeCombineRGB'); place(comb2, X_NRM+120, ROW0-380, frame_nrm, 'Comb B')
-    link(links, sep1.outputs[0], comb1.inputs[0]); link(links, sep1.outputs[1], comb1.inputs[1]); link(links, sep1.outputs[2], comb1.inputs[2])
-    link(links, sep2.outputs[0], comb2.inputs[0]); link(links, sep2.outputs[1], comb2.inputs[1]); link(links, sep2.outputs[2], comb2.inputs[2])
-    link(links, comb1.outputs[0], mix.inputs[1]); link(links, comb2.outputs[0], mix.inputs[2])
+  def _lerp_norm(nt_local, a_vec, b_vec, t_fac):
+    # MixRGB expects color sockets, so convert Vector -> Color -> Vector
+    mix = nt_local.nodes.new('ShaderNodeMixRGB'); mix.blend_type='MIX'
+    place(mix, X_NRM+160, ROW0-300, frame_nrm, label='Lerp Normals')
+    link(links, t_fac, mix.inputs[0])
 
-    sep3 = nt.nodes.new('ShaderNodeSeparateColor'); place(sep3, X_NRM+320, ROW0-300, frame_nrm, 'Sep Mixed')
+    sep1 = nt_local.nodes.new('ShaderNodeSeparateXYZ'); place(sep1, X_NRM+80, ROW0-220, frame_nrm, 'Sep A')
+    sep2 = nt_local.nodes.new('ShaderNodeSeparateXYZ'); place(sep2, X_NRM+80, ROW0-380, frame_nrm, 'Sep B')
+    link(links, a_vec, sep1.inputs[0]); link(links, b_vec, sep2.inputs[0])
+
+    comb1, (r1, g1, b1) = _new_combine_rgb(nt_local)
+    place(comb1, X_NRM+120, ROW0-220, frame_nrm, 'Comb A')
+    comb2, (r2, g2, b2) = _new_combine_rgb(nt_local)
+    place(comb2, X_NRM+120, ROW0-380, frame_nrm, 'Comb B')
+
+    link(links, sep1.outputs[0], comb1.inputs[r1])
+    link(links, sep1.outputs[1], comb1.inputs[g1])
+    link(links, sep1.outputs[2], comb1.inputs[b1])
+
+    link(links, sep2.outputs[0], comb2.inputs[r2])
+    link(links, sep2.outputs[1], comb2.inputs[g2])
+    link(links, sep2.outputs[2], comb2.inputs[b2])
+
+    link(links, comb1.outputs[0], mix.inputs[1])
+    link(links, comb2.outputs[0], mix.inputs[2])
+
+    sep3, (sr, sg, sb) = _new_separate_rgb(nt_local)
+    place(sep3, X_NRM+320, ROW0-300, frame_nrm, 'Sep Mixed')
     link(links, mix.outputs[0], sep3.inputs[0])
-    combN = nt.nodes.new('ShaderNodeCombineXYZ'); place(combN, X_NRM+480, ROW0-300, frame_nrm, 'To XYZ')
-    link(links, sep3.outputs[0], combN.inputs[0]); link(links, sep3.outputs[1], combN.inputs[1]); link(links, sep3.outputs[2], combN.inputs[2])
-    norm = _vec_math(nt,'NORMALIZE'); place(norm, X_NRM+640, ROW0-300, frame_nrm, 'Normalize')
+
+    combN = nt_local.nodes.new('ShaderNodeCombineXYZ'); place(combN, X_NRM+480, ROW0-300, frame_nrm, 'To XYZ')
+    link(links, sep3.outputs[sr], combN.inputs[0])
+    link(links, sep3.outputs[sg], combN.inputs[1])
+    link(links, sep3.outputs[sb], combN.inputs[2])
+
+    norm = nt_local.nodes.new('ShaderNodeVectorMath'); norm.operation='NORMALIZE'
+    place(norm, X_NRM+640, ROW0-300, frame_nrm, 'Normalize')
     link(links, combN.outputs[0], norm.inputs[0])
     return norm.outputs[0]
 

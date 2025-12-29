@@ -10,8 +10,6 @@
 
 ######## todo ########
 # --- must have for 0.2 release ----
-# - basic 5.x support...
-#     - check other issues
 # - ts support
 #   - add support for older forest format
 # --- support in future ----
