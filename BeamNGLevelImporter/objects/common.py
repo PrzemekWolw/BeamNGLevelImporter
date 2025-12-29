@@ -176,3 +176,9 @@ def _set_modifier_object_input(mod, socket_name, obj):
   except Exception:
     pass
   return False
+
+def reset_object_common_caches():
+  """Called on file-load/new-file to avoid keeping dead RNA pointers."""
+  global _cached_meshes, _coll_cache
+  _cached_meshes = {"PLANE2": None, "CUBE2": None}
+  _coll_cache = {}

@@ -61,3 +61,8 @@ def make_valid_name(base, existing=None, maxlen=63):
     if cand not in existing:
       return cand
     i += 1
+
+def reset_collada_caches():
+  """Clear Collada importer caches (safe to call anytime)."""
+  _SOURCE_FLOAT_CACHE.clear()
+  _INPUT_SR_CACHE.clear()

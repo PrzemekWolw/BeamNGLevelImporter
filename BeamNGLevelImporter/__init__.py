@@ -94,6 +94,24 @@ def _beamng_apply_defaults_on_load(_dummy):
   except Exception:
     pass
 
+@persistent
+def _beamng_clear_caches_on_load(_dummy):
+  """
+  Runs after Ctrl+N (new file) and after loading a .blend.
+  Clears module-level caches that may hold dead RNA pointers.
+  """
+  try:
+    from .objects import common as obj_common
+    obj_common.reset_object_common_caches()
+  except Exception:
+    pass
+
+  try:
+    from .shapes.beamng_collada import collada_util as cu
+    cu.reset_collada_caches()
+  except Exception:
+    pass
+
 classes = (
   BeamNGLevelImporterPreferences,
   props_mod.LevelEntry,
@@ -132,6 +150,8 @@ def register():
   _apply_defaults_to_current_scene_only()
   if _beamng_apply_defaults_on_load not in bpy.app.handlers.load_post:
     bpy.app.handlers.load_post.append(_beamng_apply_defaults_on_load)
+  if _beamng_clear_caches_on_load not in bpy.app.handlers.load_post:
+    bpy.app.handlers.load_post.append(_beamng_clear_caches_on_load)
 
 def unregister():
   from bpy.utils import unregister_class
@@ -146,6 +166,11 @@ def unregister():
   try:
     if _beamng_apply_defaults_on_load in bpy.app.handlers.load_post:
       bpy.app.handlers.load_post.remove(_beamng_apply_defaults_on_load)
+  except Exception:
+    pass
+  try:
+    if _beamng_clear_caches_on_load in bpy.app.handlers.load_post:
+      bpy.app.handlers.load_post.remove(_beamng_clear_caches_on_load)
   except Exception:
     pass
   if hasattr(bpy.types.Scene, "BeamNGLevelImporter"):
