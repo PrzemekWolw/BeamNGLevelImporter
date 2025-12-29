@@ -5,7 +5,6 @@
 #
 # ##### END LICENSE BLOCK #####
 
-
 # Init BeamNGLevelImporter
 bl_info = {
   "name": "BeamNG Level Importer",
@@ -70,15 +69,30 @@ def _apply_defaults_to_scene(scene: bpy.types.Scene):
     if not getattr(props, "user_folder", "") and prefs.default_user_folder:
       props.user_folder = prefs.default_user_folder
   except Exception:
-    return
+    pass
 
-def _apply_defaults_to_all_scenes():
-  for scn in bpy.data.scenes:
-    _apply_defaults_to_scene(scn)
+def _apply_defaults_to_current_scene_only():
+  """
+  SAFE during register(): avoids bpy.data.scenes (which can be _RestrictData).
+  """
+  try:
+    scn = getattr(bpy.context, "scene", None)
+    if scn:
+      _apply_defaults_to_scene(scn)
+  except Exception:
+    pass
+
 
 @persistent
 def _beamng_apply_defaults_on_load(_dummy):
-  _apply_defaults_to_all_scenes()
+  """
+  Runs after file load, when bpy.data.scenes is available again.
+  """
+  try:
+    for scn in bpy.data.scenes:
+      _apply_defaults_to_scene(scn)
+  except Exception:
+    pass
 
 classes = (
   BeamNGLevelImporterPreferences,
@@ -96,15 +110,26 @@ classes = (
 
 def register():
   from bpy.utils import register_class
+
+  try:
+    unregister()
+  except Exception:
+    pass
+
   for cls in classes:
-    register_class(cls)
+    try:
+      register_class(cls)
+    except ValueError as e:
+      if "already registered" not in str(e):
+        raise
+
   if not hasattr(bpy.types.Scene, "BeamNGLevelImporter"):
     bpy.types.Scene.BeamNGLevelImporter = bpy.props.PointerProperty(
       type=props_mod.BeamNGLevelImporterproperties
     )
   materials_loader.register_materials_loader()
   realize_instances.register_realize_instances()
-  _apply_defaults_to_all_scenes()
+  _apply_defaults_to_current_scene_only()
   if _beamng_apply_defaults_on_load not in bpy.app.handlers.load_post:
     bpy.app.handlers.load_post.append(_beamng_apply_defaults_on_load)
 
@@ -133,6 +158,3 @@ def unregister():
       unregister_class(cls)
     except Exception:
       pass
-
-if __name__ == "__main__":
-  register()
