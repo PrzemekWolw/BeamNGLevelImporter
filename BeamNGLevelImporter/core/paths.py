@@ -119,7 +119,7 @@ def resolve_any_beamng_path(rel: str, level_dir: Path | None) -> Path | None:
     return get_real_case_path(p)
 
   # Build a virtual path; if rel is absolute virtual (/levels/.. or /art/..), use it as-is
-  s = rel.replace("\\", "/")
+  s = rel.replace("\\", "/").strip()
   if s.startswith("/"):
     virt = s.lstrip("/")
     entry = resolve_virtual_with_links(virt, base_dir_virt=None)
@@ -139,23 +139,86 @@ def resolve_any_beamng_path(rel: str, level_dir: Path | None) -> Path | None:
   return ensure_local_file(entry)
 
 
+_TYPED_SUFFIXES = (".color", ".normal", ".data")
+
+def _split_last_ext(s: str) -> tuple[str, str]:
+  """Return (base_without_last_ext, last_ext_with_dot_or_empty)."""
+  if "." in s:
+    b, e = s.rsplit(".", 1)
+    return b, "." + e.lower()
+  return s, ""
+
+def _strip_typed_suffix(base_no_ext: str) -> tuple[str, str | None]:
+  """If base endswith .color/.normal/.data return (stem, suffix) else (base, None)."""
+  low = base_no_ext.lower()
+  for suf in _TYPED_SUFFIXES:
+    if low.endswith(suf):
+      return base_no_ext[:-len(suf)], suf
+  return base_no_ext, None
+
+def _image_candidates(rel: str) -> list[str]:
+  """
+  Generate candidate virtual paths for images.
+
+  Key behavior:
+  - candidates are generated FIRST
+  - each candidate is later resolved via resolve_any_beamng_path(), which follows .link
+  - BeamNG typed textures:
+      foo.color.png  -> foo.color.dds AND foo.dds (common in packed) + others
+      foo.normal.png -> foo.normal.dds AND foo.dds + others
+      foo.data.png   -> foo.data.dds AND foo.dds + others
+  """
+  s = (rel or "").replace("\\", "/").strip()
+  if not s:
+    return []
+
+  out: list[str] = [s]
+
+  base_no_ext, _ = _split_last_ext(s)
+  stem_no_typed, typed = _strip_typed_suffix(base_no_ext)
+
+  # preferred real formats to try (packed BeamNG commonly has .dds)
+  exts = (".dds", ".png", ".jpg", ".jpeg", ".tga", ".bmp")
+
+  if typed:
+    # Keep typed suffix, swap extension (this fixes foo.color.png -> foo.color.dds)
+    for ext in exts:
+      out.append(base_no_ext + ext)
+
+    # Also try stripping typed suffix entirely (some assets exist as foo.dds)
+    for ext in exts:
+      out.append(stem_no_typed + ext)
+  else:
+    # Normal extension fallback
+    for ext in exts:
+      out.append(base_no_ext + ext)
+
+  # De-dup preserving order
+  seen = set()
+  deduped: list[str] = []
+  for c in out:
+    k = c.lower()
+    if k in seen:
+      continue
+    seen.add(k)
+    deduped.append(c)
+  return deduped
+
+
 def try_resolve_image_path(rel: str, level_dir: Path | None) -> Path | None:
   """
-  Try resolve with link support and common image suffixes (both directions).
+  Try resolve with link support and extension fallbacks.
+
+  IMPORTANT: We apply .link following to EACH candidate by calling resolve_any_beamng_path()
+  for each candidate. This fixes packed installs where .link points to *.png but only *.dds exists.
   """
-  # Attempt as-is
-  p = resolve_any_beamng_path(rel, level_dir)
-  if p and p.exists():
-    return p
-  # Try suffixes from base name (strip either .png, .dds, .jpg, etc.)
-  if "." in rel:
-    base = rel.rsplit(".", 1)[0]
-  else:
-    base = rel
-  for ext in (".png", ".dds", ".jpg", ".jpeg", ".tga", ".bmp"):
-    p2 = resolve_any_beamng_path(base + ext, level_dir)
-    if p2 and p2.exists():
-      return p2
+  if not rel:
+    return None
+
+  for cand in _image_candidates(rel):
+    p = resolve_any_beamng_path(cand, level_dir)
+    if p and p.exists():
+      return p
   return None
 
 
@@ -209,21 +272,22 @@ def resolve_texture_relative(tex: str, *, mat_dir: Path | None, level_dir: Path 
   if not mat_dir:
     return tex
   # Try common relative locations from the material file
-  # e.g. <mat_dir>/textures/<name>, <mat_dir>/<name>
   candidates = [
     mat_dir / "textures" / tex,
     mat_dir / tex,
   ]
-  from .paths import exists_insensitive, get_real_case_path  # circular-safe import
+
+  # circular-safe import
+  from .paths import exists_insensitive, get_real_case_path
+
   for c in candidates:
     if exists_insensitive(c):
       c2 = get_real_case_path(c)
       # Convert absolute filesystem path back to a virtual-style path, relative to level_dir if possible
       try:
         if level_dir and c2.is_relative_to(level_dir):
-          # e.g. /.../levels/mylevel/art/road/road_d.dds -> "levels/mylevel/art/road/road_d.dds"
-          rel = c2.relative_to(level_dir.parent)
-          return str(rel).replace("\\", "/")
+          relp = c2.relative_to(level_dir.parent)
+          return str(relp).replace("\\", "/")
       except Exception:
         pass
       return str(c2).replace("\\", "/")
