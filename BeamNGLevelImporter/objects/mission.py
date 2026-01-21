@@ -81,7 +81,7 @@ def build_mission_objects(ctx):
         except Exception:
           sky.sun_rotation = math.radians(60)
         sky.sun_size = math.radians(1)
-        sky.sun_intensity = 0.4
+        sky.sun_intensity = 1.0
 
     elif cls == 'CameraBookmark':
       handled = True
