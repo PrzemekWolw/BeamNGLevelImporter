@@ -13,7 +13,6 @@
 # - ts support
 #   - add support for older forest format
 # --- support in future ----
-# - light support, sync light energy properly
 # - particle support
 # - export support
 # - procedural meshes, trackbuilder, etc

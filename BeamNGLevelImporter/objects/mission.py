@@ -24,6 +24,24 @@ from .river import make_river_from_nodes_catmull
 from .decal_road import make_decal_road
 from .mesh_road import make_mesh_road
 
+LM_PER_W = 683.0
+
+def lumens_to_watts(lm, lm_per_w=LM_PER_W):
+  return float(lm) / float(lm_per_w)
+
+def candela_to_watts(cd, outer_angle_rad, lm_per_w=LM_PER_W):
+  """
+  Convert peak candela to watts:
+    cd -> lumens via cone solid angle, then lumens -> watts.
+  Assumes outer_angle_rad is the spot half-angle.
+  If your source stores full cone angle, change:
+    theta = outer_angle_rad * 0.5
+  """
+  theta = float(outer_angle_rad)
+  omega = 2.0 * math.pi * (1.0 - math.cos(theta))  # steradians
+  lumens = float(cd) * omega
+  return lumens_to_watts(lumens, lm_per_w)
+
 def _shape_key(shape_name: str | None) -> str:
   """
   Canonical key for TSStatic shapes.
@@ -102,19 +120,29 @@ def build_mission_objects(ctx):
       name = i.get('name') or 'SpotLight'
       rot_euler_rot = rot_euler.copy()
       rot_euler_rot.rotate_axis('X', math.radians(90))
-      brightness = float(i.get('brightness') or 1) * 100.0
+
+      # brightness=1 => 5000 cd
+      intensity_cd = float(i.get('brightness') or 1.0) * 5000.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
       angle = float(i.get('outerAngle') or math.radians(45))
-      obj = make_light_fast('SPOT', name, pos, rot_euler_rot, scl, brightness, color, parent_coll, angle)
+
+      power_w = candela_to_watts(intensity_cd, angle)
+
+      obj = make_light_fast('SPOT', name, pos, rot_euler_rot, scl, power_w, color, parent_coll, angle)
       if obj:
         _apply_custom_props(obj, i)
 
     elif cls == 'PointLight':
       handled = True
       name = i.get('name') or 'PointLight'
-      brightness = float(i.get('brightness') or 1) * 100.0
+
+      # brightness=1 => 5000 lm
+      flux_lm = float(i.get('brightness') or 1.0) * 5000.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
-      obj = make_light_fast('POINT', name, pos, rot_euler, scl, brightness, color, parent_coll)
+
+      power_w = lumens_to_watts(flux_lm)
+
+      obj = make_light_fast('POINT', name, pos, rot_euler, scl, power_w, color, parent_coll)
       if obj:
         _apply_custom_props(obj, i)
 
