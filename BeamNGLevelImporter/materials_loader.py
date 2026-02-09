@@ -17,6 +17,7 @@ from .materials.v0 import build_pbr_v0_material
 from .materials.terrain_v15 import build_terrain_material_v15
 from .materials.terrain_v0 import build_terrain_material_v0
 from .utils.bpy_helpers import dedupe_materials
+from .core.level_scan import last_file_index
 
 
 def _strip_numeric_suffix(name: str) -> str:
@@ -169,6 +170,10 @@ class BeamNG_PT_MaterialsLoader(Panel):
   bl_space_type = 'VIEW_3D'
   bl_region_type = 'UI'
   bl_category = "BeamNG Level Importer"
+
+  @classmethod
+  def poll(cls, context):
+    return last_file_index() is not None
 
   def draw(self, context):
     layout = self.layout
