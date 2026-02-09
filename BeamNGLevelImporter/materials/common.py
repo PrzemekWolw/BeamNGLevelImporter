@@ -114,17 +114,14 @@ def connect_img(nt, rel, level_dir, colorspace, use_uv2, uv2_name, uv1_name, lab
       mapn.inputs['Scale'].default_value[1] = float(scale[1])
       mapn.inputs['Scale'].default_value[2] = 1.0
 
-      uvn = uv_node(nt, uv1_name) if uv1_name else nt.nodes.new('ShaderNodeTexCoord')
+      uvn = uv_node(nt, uv1_name)
+      nt.nodes.new('ShaderNodeTexCoord')
       uv_out = uvn.outputs['UV'] if 'UV' in uvn.outputs else uvn.outputs['UV']
       nt.links.new(uv_out, mapn.inputs['Vector'])
       nt.links.new(mapn.outputs['Vector'], vector_in)
     else:
-      if uv1_name:
-        uvn = uv_node(nt, uv1_name)
-        nt.links.new(uvn.outputs['UV'], vector_in)
-      else:
-        texcoord = nt.nodes.new('ShaderNodeTexCoord')
-        nt.links.new(texcoord.outputs['UV'], vector_in)
+      texcoord = nt.nodes.new('ShaderNodeTexCoord')
+      nt.links.new(texcoord.outputs['UV'], vector_in)
   return img
 
 def set_material_blend_shadow(mat, *, blend_mode=None, alpha_threshold=None, shadow='AUTO'):
