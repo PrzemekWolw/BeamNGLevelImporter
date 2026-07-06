@@ -126,6 +126,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None, ma
   roughness_stack = None
   normal_out = None
   emissive_stack = None
+  emissive_strength = 1.0
   coat_stack = None
   coat_rough_stack = None
   top_frame = new_frame(nt, f'{mat_name} (PBR v1.5)', color=(0.12, 0.12, 0.12), loc=(LAYER_X_START-80, COL_BASE+200))
@@ -365,6 +366,8 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None, ma
         link(links, emi_img.outputs['Color'], emi_mul.inputs['Color2'])
         emi_socket = emi_mul.outputs['Color']
       emissive_stack = emi_socket
+      emissive_nits = get_scalar(layer, 'emissiveIntensityNits', None, -1.0)
+      emissive_strength = emissive_nits if emissive_nits >= 0.0 else 2000.0
 
     if cc_path or abs(clearCoatFactor) > 1e-6:
       cc_val_node = value_node(nt, clearCoatFactor, f'ClearCoatFac L{idx}')
@@ -425,7 +428,7 @@ def build_pbr_v15_material(mat_name: str, matdef: dict, level_dir: Path|None, ma
       link(links, emissive_stack, emission_input)
       try:
         emission_strength_input = get_bsdf_input(bsdf, ['Emission Strength'])
-        emission_strength_input.default_value = 1.0
+        emission_strength_input.default_value = emissive_strength
       except KeyError:
         pass
     except KeyError:

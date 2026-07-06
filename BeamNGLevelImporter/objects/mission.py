@@ -29,17 +29,14 @@ LM_PER_W = 683.0
 def lumens_to_watts(lm, lm_per_w=LM_PER_W):
   return float(lm) / float(lm_per_w)
 
-def candela_to_watts(cd, outer_angle_rad, lm_per_w=LM_PER_W):
+def candela_to_watts(cd, lm_per_w=LM_PER_W):
   """
   Convert peak candela to watts:
-    cd -> lumens via cone solid angle, then lumens -> watts.
-  Assumes outer_angle_rad is the spot half-angle.
-  If your source stores full cone angle, change:
-    theta = outer_angle_rad * 0.5
+    cd -> point-like luminous intensity, matching Blender spot light normalization.
+  Blender spot lights use point-light energy with a cone mask, so the cone angle
+  is not part of the energy conversion.
   """
-  theta = float(outer_angle_rad)
-  omega = 2.0 * math.pi * (1.0 - math.cos(theta))  # steradians
-  lumens = float(cd) * omega
+  lumens = float(cd) * 4.0 * math.pi
   return lumens_to_watts(lumens, lm_per_w)
 
 def _shape_key(shape_name: str | None) -> str:
@@ -121,12 +118,12 @@ def build_mission_objects(ctx):
       rot_euler_rot = rot_euler.copy()
       rot_euler_rot.rotate_axis('X', math.radians(90))
 
-      # brightness=1 => 5000 cd
-      intensity_cd = float(i.get('brightness') or 1.0) * 5000.0
+      # SpotLight intensity is candelas; brightness is the normalized editor value.
+      intensity_cd = float(i.get('intensity')) if i.get('intensity') is not None else float(i.get('brightness') or 1.0) * 5000.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
-      angle = float(i.get('outerAngle') or math.radians(45))
+      angle = math.radians(float(i.get('outerAngle') or 45.0))
 
-      power_w = candela_to_watts(intensity_cd, angle)
+      power_w = candela_to_watts(intensity_cd)
 
       obj = make_light_fast('SPOT', name, pos, rot_euler_rot, scl, power_w, color, parent_coll, angle)
       if obj:
@@ -136,8 +133,8 @@ def build_mission_objects(ctx):
       handled = True
       name = i.get('name') or 'PointLight'
 
-      # brightness=1 => 5000 lm
-      flux_lm = float(i.get('brightness') or 1.0) * 5000.0
+      # PointLight intensity is lumens; brightness is candelas normalized by LightRange.
+      flux_lm = float(i.get('intensity')) if i.get('intensity') is not None else float(i.get('brightness') or 1.0) * 4.0 * math.pi * 5000.0
       color = tuple((i.get('color') or [1, 1, 1])[:3])
 
       power_w = lumens_to_watts(flux_lm)
