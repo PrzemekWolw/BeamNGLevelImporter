@@ -11,6 +11,7 @@ import os
 from collections import defaultdict
 
 from ..core.progress import force_redraw
+from ..core.paths import resolve_any_beamng_path
 from ..objects.terrainblock import import_terrain_block
 from ..objects.groundcover import build_groundcover_objects, bake_groundcover_to_mesh
 from ..materials.water import build_water_material_for_object
@@ -25,6 +26,8 @@ from .decal_road import make_decal_road
 from .mesh_road import make_mesh_road
 
 LM_PER_W = 683.0
+COOKIE_TEX_NODE = "BeamNG Cookie Texture"
+COOKIE_COORD_NODE = "BeamNG Cookie Coordinates"
 
 def lumens_to_watts(lm, lm_per_w=LM_PER_W):
   return float(lm) / float(lm_per_w)
@@ -54,6 +57,94 @@ def _apply_custom_props(obj, data_dict):
       obj[k] = v
     except Exception as e:
       print(f"Could not store custom property {k} on {obj.name}: {e}")
+
+def _find_light_node(light, bl_idname):
+  if not light or not light.node_tree:
+    return None
+  for node in light.node_tree.nodes:
+    if node.bl_idname == bl_idname:
+      return node
+  return None
+
+def _resolve_cookie_path(cookie, level_path):
+  cookie_path = resolve_any_beamng_path(cookie, level_path)
+  if cookie_path:
+    return cookie_path
+
+  value = str(cookie or "").strip()
+  if not value:
+    return None
+  path = os.path.expanduser(value)
+  if os.path.isabs(path) and os.path.exists(path):
+    return path
+  if value.startswith("/") and level_path:
+    root = level_path.parent.parent
+    path = root / value.lstrip("/")
+    if path.exists():
+      return path
+  return None
+
+def _apply_light_cookie_nodes(obj, cookie, level_path):
+  light = getattr(obj, "data", None)
+  cookie = str(cookie or "").strip()
+  if not light or not cookie:
+    return
+
+  light.use_nodes = True
+  nt = light.node_tree
+  if not nt:
+    return
+
+  emission = _find_light_node(light, "ShaderNodeEmission") or nt.nodes.new("ShaderNodeEmission")
+  output = _find_light_node(light, "ShaderNodeOutputLight") or nt.nodes.new("ShaderNodeOutputLight")
+  tex = nt.nodes.get(COOKIE_TEX_NODE) or nt.nodes.new("ShaderNodeTexImage")
+  coord = nt.nodes.get(COOKIE_COORD_NODE) or nt.nodes.new("ShaderNodeTexCoord")
+
+  tex.name = COOKIE_TEX_NODE
+  tex.label = "BeamNG Cookie"
+  tex.extension = "CLIP"
+  tex.location = (-560, 120)
+  coord.name = COOKIE_COORD_NODE
+  coord.label = "BeamNG Cookie Coordinates"
+  coord.location = (-760, 120)
+
+  cookie_path = _resolve_cookie_path(cookie, level_path)
+  if cookie_path:
+    try:
+      tex.image = bpy.data.images.load(str(cookie_path), check_existing=True)
+    except Exception as e:
+      print(f"Could not load cookie texture {cookie} for light {obj.name}: {e}")
+      tex.image = None
+  else:
+    tex.image = None
+
+  emission.location = (-180, 0)
+  output.location = (120, 0)
+  if "Strength" in emission.inputs:
+    emission.inputs["Strength"].default_value = 1.0
+
+  for link in list(nt.links):
+    if link.to_node == emission and link.to_socket == emission.inputs["Color"]:
+      nt.links.remove(link)
+    elif link.to_node == output and link.to_socket == output.inputs["Surface"]:
+      nt.links.remove(link)
+
+  if "UV" in coord.outputs and "Vector" in tex.inputs:
+    nt.links.new(coord.outputs["UV"], tex.inputs["Vector"])
+  nt.links.new(tex.outputs["Color"], emission.inputs["Color"])
+  nt.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+
+def _apply_light_props(obj, data_dict, level_path):
+  _apply_custom_props(obj, data_dict)
+  if not obj or not getattr(obj, "data", None):
+    return
+  cookie = data_dict.get("cookie")
+  if cookie:
+    try:
+      obj.data["cookie"] = cookie
+    except Exception as e:
+      print(f"Could not store cookie on light data {obj.name}: {e}")
+    _apply_light_cookie_nodes(obj, cookie, level_path)
 
 
 def build_mission_objects(ctx):
@@ -127,7 +218,7 @@ def build_mission_objects(ctx):
 
       obj = make_light_fast('SPOT', name, pos, rot_euler_rot, scl, power_w, color, parent_coll, angle)
       if obj:
-        _apply_custom_props(obj, i)
+        _apply_light_props(obj, i, ctx.config.level_path)
 
     elif cls == 'PointLight':
       handled = True
@@ -141,7 +232,7 @@ def build_mission_objects(ctx):
 
       obj = make_light_fast('POINT', name, pos, rot_euler, scl, power_w, color, parent_coll)
       if obj:
-        _apply_custom_props(obj, i)
+        _apply_light_props(obj, i, ctx.config.level_path)
 
     elif cls == 'GroundPlane':
       handled = True
